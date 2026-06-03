@@ -62,7 +62,7 @@ class ActivationStore:
         run_id = str(uuid.uuid4())[:8]
         self._conn.execute(
             "INSERT INTO runs VALUES (?, ?, CURRENT_TIMESTAMP, ?)",
-            [run_id, model_name, json.dump(config)]
+            [run_id, model_name, json.dumps(config)]
         )
         logger.info(f"Created run: {run_id}")
         return run_id
