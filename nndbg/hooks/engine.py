@@ -108,6 +108,24 @@ class HookEngine:
         self._capturing = False
         return dict(self._captured)
     
+    def architecture_summary(self) -> Dict[str, Dict]:
+        summary = {}
+        for name, module in self._layer_registry.items():
+            param_count = sum(
+                p.numel for p in module.parameters(recurse=False)
+            )
+            trainable = sum(
+                p.numel for p in module.parameters(recurse=False)
+                if p.requires_grad
+            )
+            summary[name] = {
+                "type": type(module).__name__,
+                "parameters": param_count,
+                "trainable": trainable,
+                "frozen": param_count - trainable
+            }
+        return summary
+    
 class _CaptureContext:
 
     def __init__(self, engine: HookEngine):
