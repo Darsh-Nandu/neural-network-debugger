@@ -183,7 +183,7 @@ nndbg/
 - [x] ActivationStore — DuckDB-backed storage
 - [x] Axis API — semantic comparison dimensions
 - [x] Linear probing — per-layer concept encoding scores
-- [x] ProbeResults — visualization with Plotly
+- [ ] ProbeResults — visualization with Plotly
 
 ### Phase 2 — Neuron & Head Attribution
 - [ ] NeuronAttributor — top-k neurons per concept
