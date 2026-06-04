@@ -75,6 +75,10 @@ class HeadAttributor:
 
         self._hook_engine.attach(layer_filter=is_attention)
 
+        # First pass: collect all activations and find global max shapes per layer
+        all_group_activations: Dict[str, Dict[str, List[np.ndarray]]] = {}
+        global_max_shapes: Dict[str, Tuple] = {}
+
         for group_name, texts in axis.groups.items():
             logger.info(
                 f"  Collecting attention for group '{group_name}'"
@@ -93,14 +97,36 @@ class HeadAttributor:
                     if layer_name not in layer_attns:
                         layer_attns[layer_name] = []
                     layer_attns[layer_name].append(arr)
+                    
+                    # Track global max shape per layer
+                    if layer_name not in global_max_shapes:
+                        global_max_shapes[layer_name] = arr.shape
+                    else:
+                        old_shape = global_max_shapes[layer_name]
+                        new_shape = tuple(max(old_shape[i], arr.shape[i]) for i in range(len(arr.shape)))
+                        global_max_shapes[layer_name] = new_shape
+            
+            all_group_activations[group_name] = layer_attns
 
-            # Compute per-head means
+        # Second pass: pad all tensors to global max shapes and compute per-head means
+        for group_name, layer_attns in all_group_activations.items():
             for layer_name, tensors in layer_attns.items():
                 if layer_name not in self._head_means[axis_name]:
                     self._head_means[axis_name][layer_name] = {}
 
+                # Pad all tensors to the global maximum shape for this layer
+                max_shape = global_max_shapes[layer_name]
+                padded_tensors = []
+                
+                for tensor in tensors:
+                    if tensor.shape != max_shape:
+                        # Pad with zeros
+                        pad_widths = [(0, max_shape[i] - tensor.shape[i]) for i in range(len(tensor.shape))]
+                        tensor = np.pad(tensor, pad_widths, mode='constant', constant_values=0)
+                    padded_tensors.append(tensor)
+                
                 # Stack all samples: (n_samples, ...)
-                stacked = np.stack(tensors, axis=0)
+                stacked = np.stack(padded_tensors, axis=0)
                 mean_tensor = stacked.mean(axis=0)
 
                 if mean_tensor.ndim == 4:
