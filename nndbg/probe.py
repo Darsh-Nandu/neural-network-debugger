@@ -25,7 +25,8 @@ from tqdm import tqdm
 from nndbg.hooks import HookEngine, HookRegistry
 from nndbg.probing import Axis
 from nndbg.storage import ActivationStore
-from nndbg.probing.trainer import ProbeTrainer as _ProbeTrainer 
+from nndbg.probing.trainer import ProbeTrainer as _ProbeTrainer
+from nndbg.visualization.trajectory import TraceResults, LayerTrace
 from nndbg.utils import get_device, get_logger
 
 logger = get_logger(__name__)
@@ -226,6 +227,35 @@ class ModelProbe:
             store=self._store,
             layer_group_data=layer_group_data
         )
+    
+    def trace(self, text: str) -> "TraceResults":
+
+        self._hook_engine.attach()
+        activations = self._run_single(text)
+        self._hook_engine.detach()
+
+        layers = []
+        for layer_name, tensor in activations.items():
+            arr = tensor.float().numpy().flatten()
+            arr = np.nan_to_num(arr)
+            layers.append(LayerTrace(
+                name=layer_name,
+                mean=float(arr.mean()),
+                std=float(arr.std()),
+                l2_norm=float(np.linalg.norm(arr)),
+                sparsity=float((arr == 0).mean()),
+                min_val=float(arr.min()),
+                max_val=float(arr.max()),
+                tensor=tensor,
+            ))
+
+        return TraceResults(
+            text=text,
+            model_name=self.model_name,
+            layers=layers,
+            activations=activations,
+        )
+
     def _run_single(self, text: str) -> Dict[str, torch.Tensor]:
         """Run one text sample through the model, return activations."""
         if self.tokenizer is None:

@@ -11,6 +11,14 @@ import numpy as np
 from nndbg.probing.axis import Axis
 from nndbg.storage.store import ActivationStore
 from nndbg.utils.logging import get_logger
+from nndbg.utils.console import console
+
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+from rich.columns import Columns
+from rich import box
+
 
 logger = get_logger(__name__)
 
@@ -40,10 +48,6 @@ class ProbeResults:
         self.probe_scores = probe_scores
         self._store = store
         self._layer_group_data = layer_group_data
-
-    # ------------------------------------------------------------------
-    # Key Insights
-    # ------------------------------------------------------------------
 
     def encoding_layers(
         self,
@@ -105,28 +109,31 @@ class ProbeResults:
 
         return ranked
 
-    # ------------------------------------------------------------------
-    # Text Summary
-    # ------------------------------------------------------------------
-
     def summary(
         self,
         top_k: Optional[int] = 5,
         min_score: float = 0.0,
     ) -> str:
         """
-        Human-readable report of findings.
+        Rich-formatted report of findings.
 
         Args:
             top_k:      layers to show per axis. None = all layers.
             min_score:  only show layers above this threshold.
         """
-        lines = []
-        lines.append(f"\n{'='*60}")
-        lines.append(f"  NNDbg Analysis Report")
-        lines.append(f"  Model : {self.model_name}")
-        lines.append(f"  Run   : {self.run_id}")
-        lines.append(f"{'='*60}")
+        header = Text()
+        header.append("Model  ", style="dim")
+        header.append(f"{self.model_name}\n", style="bold white")
+        header.append("Run    ", style="dim")
+        header.append(f"{self.run_id}", style="bold cyan")
+
+        console.print()
+        console.print(Panel(
+            header,
+            title="[bold cyan]NNDbg Analysis Report[/bold cyan]",
+            border_style="cyan",
+            padding=(1, 4),
+        ))
 
         for axis in self.axes:
             layers = self.encoding_layers(
@@ -135,34 +142,77 @@ class ProbeResults:
                 min_score=min_score,
             )
 
-            lines.append(f"\n  Axis    : '{axis.name}'")
-            lines.append(f"  Groups  : {', '.join(axis.group_names)}")
-            lines.append(f"  Samples : {axis.total_samples}")
-            lines.append(
-                f"  Showing : "
-                f"{'all' if top_k is None else f'top {top_k}'} layers"
-                + (f" (min_score ≥ {min_score})" if min_score > 0 else "")
+            # Axis info panel
+            info = Text()
+            info.append("Groups   ", style="dim")
+            info.append(f"{', '.join(axis.group_names)}\n", style="bold blue")
+            info.append("Samples  ", style="dim")
+            info.append(f"{axis.total_samples}\n", style="white")
+            info.append("Showing  ", style="dim")
+            info.append(
+                f"{'all' if top_k is None else f'top {top_k}'} layers",
+                style="white",
             )
-            lines.append(f"\n  Encoding layers:")
+            if min_score > 0:
+                info.append(f"  (min score ≥ {min_score})", style="dim")
+
+            console.print()
+            console.print(Panel(
+                info,
+                title=f"[bold blue]Axis: {axis.name}[/bold blue]",
+                border_style="blue",
+                padding=(0, 4),
+            ))
 
             if not layers:
-                lines.append(
-                    f"    No layers found above min_score={min_score}"
+                console.print(
+                    f"  [yellow]No layers found above min_score={min_score}[/yellow]"
                 )
-            else:
-                for rank, (layer, score) in enumerate(layers, 1):
-                    bar = "█" * int(score * 20)
-                    lines.append(
-                        f"    {rank:>3}. {layer:<45} {score:.3f}  {bar}"
-                    )
+                continue
 
-        lines.append(f"\n{'='*60}\n")
-        return "\n".join(lines)
+            # Results table
+            table = Table(
+                box=box.SIMPLE_HEAVY,
+                show_header=True,
+                header_style="bold cyan",
+                padding=(0, 2),
+                expand=True,
+            )
 
-    # ------------------------------------------------------------------
-    # Visualization
-    # ------------------------------------------------------------------
+            table.add_column("#",          style="dim",         width=4,  justify="right")
+            table.add_column("Layer",      style="white",       ratio=3)
+            table.add_column("Score",      style="bold magenta",width=8,  justify="right")
+            table.add_column("Confidence", ratio=2)
 
+            for rank, (layer, score) in enumerate(layers, 1):
+                # Color the score
+                if score >= 0.8:
+                    score_style = "bold green"
+                elif score >= 0.6:
+                    score_style = "bold yellow"
+                else:
+                    score_style = "bold red"
+
+                # Build progress bar
+                filled  = int(score * 24)
+                empty   = 24 - filled
+                bar = Text()
+                bar.append("█" * filled, style=score_style)
+                bar.append("░" * empty,  style="dim")
+                bar.append(f"  {score:.1%}", style=score_style)
+
+                table.add_row(
+                    str(rank),
+                    layer,
+                    Text(f"{score:.3f}", style=score_style),
+                    bar,
+                )
+
+            console.print(table)
+
+        console.print()
+        return "" 
+    
     def show(
         self,
         top_k: Optional[int] = None,
@@ -314,10 +364,6 @@ class ProbeResults:
             font=dict(family="monospace"),
         )
         fig.show()
-
-    # ------------------------------------------------------------------
-    # Export
-    # ------------------------------------------------------------------
 
     def to_dict(self) -> dict:
         return {
