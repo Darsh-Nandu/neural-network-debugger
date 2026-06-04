@@ -11,7 +11,7 @@ Core idea:
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -21,11 +21,36 @@ from nndbg.utils import get_logger
 
 logger = get_logger(__name__)
 
+# All available features a researcher can choose from
+AVAILABLE_FEATURES = ["mean", "std", "l2_norm", "sparsity", "min_val", "max_val"]
+
 class ProbeTrainer:
 
-    def __init__(self, cv_folds: int = 3, max_iter: int = 1000):
+    def __init__(self, cv_folds: int = 3, max_iter: int = 1000, test_size: float = 0.3, features: Optional[List[str]] = None):
         self.cv_folds = cv_folds
         self.max_iter = max_iter
+        self.test_size = test_size
+
+        if features is None:
+            self.features = AVAILABLE_FEATURES
+        else: 
+            invaild = [f for f in features if f not in AVAILABLE_FEATURES]
+            if invaild:
+                raise ValueError(
+                    f"Invalid features: {invaild}."
+                    f"Choose from: {AVAILABLE_FEATURES}"
+                )
+            if len(features) < 1:
+                raise ValueError("At least one feature must be specified.")
+            self.features = features
+
+        logger.info(
+            f"ProbeTrainer ready | "
+            f"cv_folds={cv_folds} | "
+            f"test_size={test_size} | "
+            f"max_iter={max_iter} | "
+            f"features={self.features}"
+        )
 
     def train_on_layer(self, layer_data: Dict[str, List[Dict]]) -> float:
         X, y = self._build_features(layer_data)
@@ -33,24 +58,49 @@ class ProbeTrainer:
         if len(set(y)) < 2:
             return 0.0
         
-        # Not enough samples for cross validation
-        if len(X) < self.cv_folds * 2:
-            return self._simple_accuracy(X, y)
-        
-        clf = LogisticRegression(
-            max_iter=self.max_iter,
-            random_state=42,
-            C=0.1
-        )
-
-        try:
-            scores = cross_val_score(
-                clf, X, y, cv=self.cv_folds, scoring="accuracy"
+        # Enough samples for cross-validation
+        if len(X) >= self.cv_folds * 2:
+            clf = LogisticRegression(
+                max_iter=self.max_iter,
+                random_state=42,
+                C=1.0,
             )
-            return float(scores.mean())
-        except Exception as e:
-            logger.warning(f"Probe training failed: {e}")
-            return 0.0
+            try:
+                scores = cross_val_score(
+                    clf, X, y,
+                    cv=self.cv_folds,
+                    scoring="accuracy",
+                )
+                return float(scores.mean())
+            except Exception as e:
+                logger.warning(f"Cross-validation failed: {e}")
+                return 0.0
+
+        # Fallback: train/test split
+        return self._split_accuracy(X, y)
+
+    def train_all_layers(
+        self,
+        layer_group_data: Dict[str, Dict[str, List[Dict]]],
+    ) -> Dict[str, float]:
+        """
+        Train probes for every layer at once.
+
+        Args:
+            layer_group_data:
+                {layer_name -> {group_name -> [sample_stats_dict]}}
+
+        Returns:
+            {layer_name -> probe_accuracy}
+        """
+        results = {}
+        for layer_name, layer_data in layer_group_data.items():
+            score = self.train_on_layer(layer_data)
+            results[layer_name] = score
+            logger.debug(
+                f"Layer '{layer_name}': probe accuracy = {score:.3f}"
+            )
+        return results
 
     def _build_features(self, layer_data: Dict[str, Dict[str]]) -> Tuple[np.ndarray, np.ndarray]:
         features = []
@@ -86,12 +136,28 @@ class ProbeTrainer:
             logger.warning(f"Too few samples ({len(X)}) for reliable probe evaluation.")
             return 0.0
         
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.3, random_state=42, stratify=y
-        )
-        clf = LogisticRegression(max_iter=self.max_iter, random_state=42)
         try:
-            clf.fit(X_train,y_train)
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y,
+                test_size=self.test_size,
+                random_state=42,
+                stratify=y,
+            )
+            clf = LogisticRegression(
+                max_iter=self.max_iter,
+                random_state=42,
+            )
+            clf.fit(X_train, y_train)
             return float((clf.predict(X_test) == y_test).mean())
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Split accuracy failed: {e}")
             return 0.0
+        
+    def __repr__(self) -> str:
+        return (
+            f"ProbeTrainer("
+            f"cv_folds={self.cv_folds}, "
+            f"test_size={self.test_size}, "
+            f"max_iter={self.max_iter}, "
+            f"features={self.features})"
+        )

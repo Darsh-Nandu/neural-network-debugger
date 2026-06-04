@@ -23,8 +23,9 @@ import torch.nn as nn
 from tqdm import tqdm
 
 from nndbg.hooks import HookEngine, HookRegistry
-from nndbg.probing import Axis, ProbeTrainer
+from nndbg.probing import Axis
 from nndbg.storage import ActivationStore
+from nndbg.probing.trainer import ProbeTrainer as _ProbeTrainer 
 from nndbg.utils import get_device, get_logger
 
 logger = get_logger(__name__)
@@ -42,6 +43,7 @@ class ModelProbe:
         model_name: str = "unknown",
         store_path: str = ":memory:",
         max_length: int = 128,
+        probe_trainer: Optional["ProbeTrainer"] = None,
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -55,6 +57,7 @@ class ModelProbe:
         self._hook_engine = HookEngine(model)
         self._registry = HookRegistry(model)
         self._store = ActivationStore(store_path)
+        self._probe_trainer = probe_trainer if probe_trainer is not None else _ProbeTrainer()
         self._axes: List[Axis] = []
 
         logger.info(
@@ -197,14 +200,14 @@ class ModelProbe:
 
         # Step 2: train probe
         logger.info("Training linear probes ...")
-        trainer = ProbeTrainer()
+        trainer = self._probe_trainer
         probe_scores: Dict[str, Dict[str, float]] = {}
 
         for axis in self._axes:
             scores = trainer.train_all_layers(layer_group_data[axis.name])
             probe_scores[axis.name] = scores
 
-            for layer_name, score in score.items():
+            for layer_name, score in scores.items():
                 self._store.store_layer_stat(
                     run_id=run_id,
                     axis_name=axis.name,
