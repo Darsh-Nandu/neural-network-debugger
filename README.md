@@ -19,12 +19,23 @@ NNDbg is a neural network interpretability library built for researchers and pra
 It answers questions like:
 
 - **Which transformer layer first learns to distinguish English from French?**
-- **Where does medical knowledge separate from legal knowledge in a model?**
+- **Where does medical knowledge separate from legal knowledge?**
 - **How does fine-tuning change where sentiment is encoded?**
-- **Which neurons fire most strongly for a specific concept group?**
 - **At what layer does a sentence's internal representation stabilize?**
 
-NNDbg does this by dynamically attaching forward hooks to every named layer of any PyTorch model, capturing activation statistics, persisting them to a DuckDB database, and training **linear probes** (logistic regression classifiers) per layer — using probe accuracy as a measure of how well each layer encodes a given concept.
+NNDbg does this by dynamically attaching forward hooks to every named layer of any PyTorch model, capturing activation statistics, persisting them to a DuckDB database, training **probes** (classifiers) per layer, and using probe accuracy as a measure of how well each layer encodes a given concept.
+
+---
+
+## What's New in This Release
+
+| Change | Summary |
+|---|---|
+| **Silent by default** | No terminal output unless you call `nndbg.set_verbose(True)` |
+| **6 probe types** | Choose from `logistic`, `ridge`, `svm`, `mlp`, `knn`, `random_forest` via the `probe_type` parameter |
+| **`results.save(path)`** | Export everything — probe scores, activation stats, and raw tensors — to a zip archive |
+| **Test script** | `test.py` ships with config flags at the top; no code editing required |
+| **Bug fixes** | `_build_features` now respects the `features` argument; `_split_accuracy` naming fixed |
 
 ---
 
@@ -34,14 +45,13 @@ NNDbg does this by dynamically attaching forward hooks to every named layer of a
 |---|---|
 | **Zero-code model instrumentation** | Attach hooks to any PyTorch model without touching its source |
 | **Axis API** | Define semantic dimensions (language, domain, sentiment, etc.) with labeled text groups |
-| **Linear probing** | Per-layer concept encoding measured via logistic regression accuracy |
+| **6 probe types** | Linear, ridge, SVM, MLP, KNN, and random forest probes — all swappable with one parameter |
+| **Silent by default** | Fully quiet during `run()` unless verbose mode is enabled |
+| **Zip export** | Save all results including raw activation tensors to a portable zip file |
 | **Activation trajectory** | Trace a single input through all layers and watch how its representation evolves |
 | **Sentence comparison** | Overlay two inputs' activation paths to spot where they diverge |
 | **DuckDB persistence** | Store runs to disk for later querying; default is in-memory |
-| **Rich terminal output** | Beautiful, color-coded tables and reports in the terminal |
 | **Interactive Plotly dashboards** | Bar charts, heatmaps, and trajectory plots with hover details |
-| **Neuron & Head attribution** | (Phase 2) Pinpoint which neurons and attention heads carry a concept |
-| **Interference detection** | (Phase 2) Find neurons shared across concept axes |
 
 ---
 
@@ -49,31 +59,31 @@ NNDbg does this by dynamically attaching forward hooks to every named layer of a
 
 ```
 nndbg/
-├── probe.py              # ModelProbe — the main entry point
-├── results.py            # ProbeResults — analysis output + visualizations
+├── probe.py              # ModelProbe — main entry point
+├── results.py            # ProbeResults — output, visualizations, save()
 │
 ├── hooks/
 │   ├── engine.py         # HookEngine — dynamic forward hook attachment & capture
-│   └── registry.py       # HookRegistry — layer metadata (type, depth, param count)
+│   └── registry.py       # HookRegistry — layer metadata
 │
 ├── storage/
 │   └── store.py          # ActivationStore — DuckDB-backed activation persistence
 │
 ├── probing/
-│   ├── axis.py           # Axis — dataclass for semantic comparison dimensions
-│   └── trainer.py        # ProbeTrainer — trains logistic regression per layer
+│   ├── axis.py           # Axis — semantic comparison dimension dataclass
+│   └── trainer.py        # ProbeTrainer — 6 classifier types, trains per layer
 │
 ├── attribution/          # (Phase 2) Advanced attribution tools
-│   ├── neuron.py         # NeuronAttributor — top-k neurons per concept
-│   ├── head.py           # HeadAttributor — attention head specialization
-│   ├── interference.py   # InterferenceDetector — shared neuron detection
-│   └── drift.py          # Fine-tune drift analysis
+│   ├── neuron.py
+│   ├── head.py
+│   ├── interference.py
+│   └── drift.py
 │
 ├── visualization/
 │   └── trajectory.py     # TraceResults + LayerTrace — single-input trajectory
 │
 └── utils/
-    ├── logging.py        # Structured logger
+    ├── logging.py        # Structured logger with set_verbose() control
     ├── device.py         # Auto device selection (CPU/CUDA/MPS)
     └── console.py        # Rich console instance
 ```
@@ -84,28 +94,26 @@ nndbg/
 ModelProbe.run()
 │
 ├── 1. HookEngine.attach()
-│      Registers a forward hook on EVERY named nn.Module in the model.
-│      Each hook captures the output tensor and stores it under the layer name.
+│      Registers a forward hook on every named nn.Module in the model.
 │
-├── 2. Forward pass per sample
-│      For each (axis, group, text) triple:
-│        - Tokenize with the model's tokenizer
-│        - Run model(**inputs) under the capture context
+├── 2. Forward pass per sample (silent by default; set_verbose(True) to see progress)
+│      For each (axis, group, text):
+│        - Tokenize → run model(**inputs) under the capture context
 │        - Collect activation stats (mean, std, l2_norm, sparsity, min, max)
-│        - Persist stats to DuckDB (ActivationStore)
+│        - Store raw activation tensors (available via results.save())
+│        - Persist stats to DuckDB
 │
 ├── 3. HookEngine.detach()
-│      Removes all hooks cleanly.
 │
 ├── 4. ProbeTrainer.train_all_layers()
-│      For each layer × each axis:
+│      For each layer × axis:
 │        - Build feature matrix X from activation stats
-│        - Build label vector y from group names
-│        - Train LogisticRegression with k-fold cross-validation
+│        - Train the chosen classifier (logistic / ridge / svm / mlp / knn / rf)
 │        - Record accuracy as the "probe score"
 │
 └── 5. Return ProbeResults
-       Contains the full probe_scores matrix and all visualization methods.
+       Contains probe_scores, layer_group_data, raw_activations, and all
+       visualization + export methods.
 ```
 
 ---
@@ -117,7 +125,7 @@ ModelProbe.run()
 - Python ≥ 3.10
 - PyTorch ≥ 2.0
 
-### From Source (recommended for now)
+### From Source
 
 ```bash
 git clone https://github.com/Darsh-Nandu/nndbg.git
@@ -137,25 +145,52 @@ pip install -e .
 | `torch ≥ 2.0` | Model forward passes and tensor operations |
 | `transformers ≥ 4.35` | HuggingFace model + tokenizer loading |
 | `duckdb ≥ 0.9` | Activation storage backend |
-| `scikit-learn ≥ 1.3` | Logistic regression probe training |
+| `scikit-learn ≥ 1.3` | All probe classifiers |
 | `plotly ≥ 5.17` | Interactive visualizations |
 | `rich ≥ 13.0` | Terminal tables and reports |
 | `numpy ≥ 1.24` | Numerical operations |
-| `tqdm ≥ 4.65` | Progress bars |
+| `tqdm ≥ 4.65` | Progress bars (shown only in verbose mode) |
 
 ---
 
 ## Quick Start
 
+### Running `test.py`
+
+The bundled `test.py` is a ready-to-run script with a config block at the top:
+
+```python
+VERBOSE     = True          # True → logs + progress bars / False → silent
+PROBE_TYPE  = "logistic"    # logistic | ridge | svm | mlp | knn | random_forest
+SAVE_PATH   = "results.zip" # None to skip saving
+```
+
+```bash
+python test.py
+```
+
+### Verbose Mode
+
+NNDbg is **completely silent by default**. Enable logging and progress bars with one call before building your probe:
+
+```python
+import nndbg
+
+nndbg.set_verbose(True)    # show INFO logs + tqdm progress bars
+nndbg.set_verbose(False)   # (default) silent
+print(nndbg.is_verbose())  # check current state
+```
+
 ### Basic Example — Language Axis
 
 ```python
+import nndbg
 from nndbg import ModelProbe
 
-# Load any HuggingFace model
+nndbg.set_verbose(True)   # optional: see progress during run()
+
 probe = ModelProbe.from_pretrained("bert-base-multilingual-cased")
 
-# Define a comparison axis: which groups differ, and how?
 probe.add_axis("language", {
     "english": [
         "The stock market crashed today.",
@@ -174,17 +209,59 @@ probe.add_axis("language", {
     ],
 })
 
-# Run the full analysis
 results = probe.run()
 
 # Print a rich terminal report
 results.summary()
 
-# Open an interactive Plotly dashboard
+# Interactive Plotly dashboard
 results.show()
 
-# Layer × axis encoding heatmap
-results.plot_heatmap()
+# Save everything (scores + raw tensors) to a zip
+results.save("language_run.zip")
+```
+
+### Choosing a Probe Type
+
+Pass `probe_type` to `ProbeTrainer`. All existing arguments still work unchanged:
+
+```python
+from nndbg import ModelProbe, ProbeTrainer
+
+trainer = ProbeTrainer(
+    probe_type = "svm",           # logistic | ridge | svm | mlp | knn | random_forest
+    cv_folds   = 5,
+    max_iter   = 2000,
+    test_size  = 0.2,
+    features   = ["mean", "std", "l2_norm"],
+)
+
+probe = ModelProbe.from_pretrained(
+    "bert-base-multilingual-cased",
+    probe_trainer=trainer,
+)
+```
+
+### Saving Results to a Zip
+
+```python
+results = probe.run()
+
+# Saves probe scores, activation stats, and raw .npy tensors
+path = results.save("my_experiment.zip")
+print(f"Saved → {path}")
+```
+
+The zip archive contains:
+
+```
+my_experiment.zip
+├── metadata.json              run ID, model name, axes
+├── probe_scores.json          {axis → {layer → accuracy}}
+├── activation_stats.json      per-layer per-group aggregated stats
+├── layer_group_data.json      per-sample stats (mean/std/…)
+└── activations/
+    └── <axis>/<group>/sample_NNNN/<layer>.npy   ← raw float32 tensors
 ```
 
 ### Multi-Axis Example
@@ -192,22 +269,24 @@ results.plot_heatmap()
 ```python
 probe = ModelProbe.from_pretrained("google/mt5-small")
 
-# Chain multiple axes
-probe.add_axis("language", {
-    "english": ["..."] * 10,
-    "french":  ["..."] * 10,
-}).add_axis("domain", {
-    "legal":   ["The defendant shall appear before the court.", ...],
-    "medical": ["Patient presents with acute symptoms.", ...],
-    "code":    ["def forward(self, x): return self.layer(x)", ...],
-}).add_axis("sentiment", {
-    "positive": ["Great product! Absolutely loved it.", ...],
-    "negative": ["Terrible experience. Worst purchase ever.", ...],
-    "neutral":  ["It arrived on time. Standard packaging.", ...],
-})
+probe \
+    .add_axis("language", {
+        "english": ["..."] * 10,
+        "french":  ["..."] * 10,
+    }) \
+    .add_axis("domain", {
+        "legal":   ["The defendant shall appear before the court.", ...],
+        "medical": ["Patient presents with acute symptoms.", ...],
+        "code":    ["def forward(self, x): return self.layer(x)", ...],
+    }) \
+    .add_axis("sentiment", {
+        "positive": ["Great product! Absolutely loved it.", ...],
+        "negative": ["Terrible experience. Worst purchase ever.", ...],
+    })
 
 results = probe.run()
 results.summary(top_k=5)
+results.save("multi_axis_run.zip")
 ```
 
 ### Activation Trajectory (Single Input)
@@ -215,22 +294,13 @@ results.summary(top_k=5)
 ```python
 probe = ModelProbe.from_pretrained("bert-base-multilingual-cased")
 
-# Trace a single sentence through all layers
 trace = probe.trace("Le chat était assis sur le tapis.")
-
-# Terminal report: all layers with stats
 trace.summary()
-
-# Interactive Plotly line chart
 trace.show()
 
-# Top-5 most active layers by L2 norm
 print(trace.most_active(top_k=5))
-
-# Find where the representation stabilizes
 print(trace.stable_at())
 
-# Access raw tensors
 tensor = trace.activations["encoder.layer.4"]
 print(tensor.shape)
 ```
@@ -241,8 +311,7 @@ print(tensor.shape)
 english = probe.trace("The cat sat on the mat.")
 french  = probe.trace("Le chat était assis sur le tapis.")
 
-# Overlay both activation trajectories on the same chart
-# Marks the layer of maximum divergence
+# Overlays both trajectories; marks layer of maximum divergence
 english.compare(french)
 ```
 
@@ -252,42 +321,10 @@ english.compare(french)
 import torch.nn as nn
 from nndbg import ModelProbe
 
-my_model = ...      # any nn.Module
-my_tokenizer = ...  # any HuggingFace tokenizer
-
 probe = ModelProbe.from_model(
     my_model,
     tokenizer=my_tokenizer,
     model_name="my-custom-model",
-)
-```
-
-### Custom ProbeTrainer
-
-```python
-from nndbg.probing.trainer import ProbeTrainer
-
-trainer = ProbeTrainer(
-    cv_folds=5,           # number of cross-validation folds
-    max_iter=2000,        # logistic regression max iterations
-    test_size=0.2,        # fallback train/test split ratio
-    features=["mean", "std"],  # subset of activation stats to use as features
-)
-
-probe = ModelProbe.from_pretrained(
-    "bert-base-multilingual-cased",
-    probe_trainer=trainer,
-)
-```
-
-### Persisting Runs to Disk
-
-```python
-probe = ModelProbe.from_pretrained(
-    "google/mt5-small",
-    store_path="./my_run.duckdb",   # persists to disk instead of memory
-    max_length=256,
-    batch_size=16,
 )
 ```
 
@@ -307,28 +344,49 @@ encoder.8        0.87     0.93     0.64     ← domain separates strongly at lay
 encoder.12       0.82     0.88     0.91     ← sentiment appears late
 ```
 
-- **Score ≥ 0.8** — Layer strongly encodes the concept
-- **Score 0.6–0.8** — Moderate encoding
-- **Score ≤ 0.6** — Near chance; layer does not meaningfully encode the concept
+| Score | Interpretation |
+|---|---|
+| ≥ 0.8 | Layer **strongly** encodes the concept |
+| 0.6–0.8 | Moderate encoding |
+| ≤ 0.6 | Near chance — layer doesn't meaningfully encode the concept |
 
-### Activation Features Used by the Probe
+### Activation Features
 
-For each layer and sample, NNDbg extracts these statistics from the raw activation tensor:
+For each layer and sample, NNDbg extracts 6 statistics from the raw activation tensor:
 
 | Feature | Meaning |
 |---|---|
-| `mean` | Average activation value across all neurons |
-| `std` | Standard deviation — how spread out activations are |
-| `l2_norm` | Euclidean norm — total activation magnitude |
+| `mean` | Average activation value |
+| `std` | Standard deviation |
+| `l2_norm` | Euclidean norm — total magnitude |
 | `sparsity` | Fraction of neurons outputting exactly 0 |
-| `min_val` | Minimum activation value |
-| `max_val` | Maximum activation value |
+| `min_val` | Minimum activation |
+| `max_val` | Maximum activation |
 
-The logistic regression probe uses these 6 numbers as a feature vector to try to predict the group label. High classification accuracy = the layer's internal geometry separates the groups.
+### Available Probe Types
+
+| `probe_type` | Classifier | Best for |
+|---|---|---|
+| `"logistic"` | `LogisticRegression` | Default — fast, interpretable |
+| `"ridge"` | `RidgeClassifier` | High-dimensional or collinear features |
+| `"svm"` | `LinearSVC` | Large sample counts, max-margin boundary |
+| `"mlp"` | `MLPClassifier (64→32)` | Non-linear concept boundaries |
+| `"knn"` | `KNeighborsClassifier` | Distribution-agnostic; no training phase |
+| `"random_forest"` | `RandomForestClassifier` | Interaction effects between features |
 
 ---
 
 ## API Reference
+
+### `nndbg` (top-level)
+
+```python
+import nndbg
+
+nndbg.set_verbose(True)     # enable logs + progress bars
+nndbg.set_verbose(False)    # (default) silent
+nndbg.is_verbose()          # → bool
+```
 
 ### `ModelProbe`
 
@@ -339,72 +397,61 @@ probe = ModelProbe.from_pretrained(model_name, store_path=":memory:", max_length
 # From an existing PyTorch model
 probe = ModelProbe.from_model(model, tokenizer, model_name="custom")
 
-# Add an axis (chainable)
-probe.add_axis(name, groups_dict)
-
-# Run full analysis → ProbeResults
-results = probe.run()
-
-# Trace a single input → TraceResults
-trace = probe.trace(text)
-
-# Get architecture summary
-arch = probe.architecture()
+probe.add_axis(name, groups_dict)   # chainable, returns self
+results = probe.run()               # → ProbeResults
+trace   = probe.trace(text)         # → TraceResults
+arch    = probe.architecture()      # → Dict
 ```
 
 ### `ProbeResults`
 
 ```python
-# Rich terminal report
-results.summary(top_k=5, min_score=0.0)
-
-# Interactive Plotly bar charts (one per axis)
-results.show(top_k=None, min_score=0.0)
-
-# Layer × axis heatmap
-results.plot_heatmap(min_score=0.0)
-
-# Top-k layers for a given axis
-results.encoding_layers("language", top_k=5, min_score=0.7)
-
-# Export as plain dict
-results.to_dict()
+results.summary(top_k=5, min_score=0.0)         # rich terminal report
+results.show(top_k=None, min_score=0.0)          # interactive Plotly bar charts
+results.plot_heatmap(min_score=0.0)              # layer × axis heatmap
+results.encoding_layers(axis, top_k=5, min_score=0.0)  # → List[Tuple[str, float]]
+results.save(path)                               # → str (zip archive path)
+results.to_dict()                                # → dict
 ```
 
 ### `TraceResults`
 
 ```python
-# Rich terminal summary of all layer stats
-trace.summary()
-
-# Interactive Plotly trajectory (mean, std, l2 per layer)
-trace.show()
-
-# Top-k most active layers by L2 norm
-trace.most_active(top_k=5)
-
-# First layer where representation stabilizes
-trace.stable_at(threshold=0.01)
-
-# Overlay two traces on the same chart
-trace_a.compare(trace_b)
-
-# Raw activation tensors
-trace.activations["encoder.layer.4"]   # → torch.Tensor
+trace.summary()                   # rich terminal layer table
+trace.show()                      # interactive Plotly trajectory chart
+trace.most_active(top_k=5)        # → List[Tuple[str, float]]
+trace.stable_at(threshold=0.01)   # → Optional[str]
+trace.compare(other_trace)        # overlay chart with divergence marker
+trace.activations                 # Dict[str, torch.Tensor]
 ```
 
 ### `ProbeTrainer`
 
 ```python
+from nndbg import ProbeTrainer
+
 trainer = ProbeTrainer(
-    cv_folds=3,                          # default: 3-fold cross-validation
-    max_iter=1000,                        # logistic regression iterations
-    test_size=0.3,                        # fallback split when too few samples
-    features=["mean", "std", "l2_norm"], # which stats to use as features
+    probe_type = "logistic",     # see table above; default: "logistic"
+    cv_folds   = 3,              # cross-validation folds
+    max_iter   = 1000,           # solver iterations (logistic/ridge/svm/mlp)
+    test_size  = 0.3,            # fallback split when too few samples
+    features   = None,           # None = all 6; or a subset list
 )
 ```
 
 Available features: `mean`, `std`, `l2_norm`, `sparsity`, `min_val`, `max_val`
+
+---
+
+## Running Tests
+
+```bash
+# pytest suite (95 tests, no HuggingFace download required)
+PYTHONPATH=. pytest tests/test_nndbg.py -v --override-ini="addopts="
+
+# Runnable integration script (downloads bert-base-multilingual-cased)
+python test.py
+```
 
 ---
 
@@ -414,7 +461,9 @@ Available features: `mean`, `std`, `l2_norm`, `sparsity`, `min_val`, `max_val`
 - [x] `HookEngine` — dynamic hook attachment/detach
 - [x] `ActivationStore` — DuckDB-backed storage
 - [x] `Axis` API — semantic comparison dimensions
-- [x] `ProbeTrainer` — linear probing per layer
+- [x] `ProbeTrainer` — 6 probe types, all existing args preserved
+- [x] Silent by default with `set_verbose()` toggle
+- [x] `results.save()` — zip export with raw tensors
 - [x] `ProbeResults` — terminal report + Plotly dashboards
 - [x] `TraceResults` — single-input activation trajectory
 - [x] Sentence comparison with divergence detection
@@ -425,13 +474,12 @@ Available features: `mean`, `std`, `l2_norm`, `sparsity`, `min_val`, `max_val`
 - [ ] Dead neuron detection
 
 ### Phase 3 — Advanced Analysis
-- [x] Concept interference detection (shared neurons across axes)
+- [x] Concept interference detection
 - [ ] Activation trajectory drift (pre/post fine-tuning)
-- [ ] Concept representation evolution across layers
+- [ ] Concept representation evolution across training steps
 
 ### Phase 4 — Diagnostics & Reporting
-- [ ] Gradient monitoring (vanishing/exploding detection)
-- [ ] Training failure detection
+- [ ] Gradient monitoring
 - [ ] HTML/PDF report export
 - [ ] CLI interface (`nndbg` command)
 
@@ -441,12 +489,9 @@ Available features: `mean`, `std`, `l2_norm`, `sparsity`, `min_val`, `max_val`
 
 ```bash
 # Run tests
-poetry run pytest
+PYTHONPATH=. pytest tests/test_nndbg.py -v --override-ini="addopts="
 
-# With coverage report
-poetry run pytest --cov=nndbg
-
-# Format code
+# Format
 poetry run black nndbg/
 poetry run ruff check nndbg/
 ```
