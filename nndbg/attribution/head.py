@@ -31,19 +31,6 @@ logger = get_logger(__name__)
 
 
 class HeadAttributor:
-    """
-    Finds attention heads that specialize per concept axis.
-
-    Usage:
-        heads = HeadAttributor(probe)
-        heads.fit("language")
-
-        # Top specialized heads
-        heads.top_heads("language", top_k=5)
-
-        # Full heatmap
-        heads.show("language")
-    """
 
     def __init__(self, probe):
         self._probe = probe

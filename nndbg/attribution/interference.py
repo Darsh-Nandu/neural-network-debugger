@@ -34,15 +34,7 @@ _RISK_LEVELS = [
 
 
 class InterferenceDetector:
-    """
-    Detects concept interference — shared neurons across axes.
-
-    Usage:
-        detector = InterferenceDetector(attributor)
-        detector.check("language", "domain")
-        detector.check_all()
-    """
-
+    
     def __init__(self, attributor: "NeuronAttributor"):
         """
         Args:

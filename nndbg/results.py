@@ -99,34 +99,53 @@ class ProbeResults:
     # Save — zip with all raw data
     # ------------------------------------------------------------------
 
-    def save(self, path: str = "nndbg_results.zip") -> str:
+    def save(
+        self,
+        path: str = "nndbg_results.zip",
+        dead_neuron_reports=None,
+    ) -> str:
         """
         Save all results to a zip archive.
 
         Archive layout
         --------------
         nndbg_results.zip
-        ├── metadata.json                  run ID, model, axes, config
-        ├── probe_scores.json              {axis -> {layer -> accuracy}}
-        ├── activation_stats.json          per-layer per-group aggregated stats
-        ├── layer_group_data.json          raw per-sample stats (mean/std/…)
-        ├── activations/                   raw activation tensors as .npy
+        ├── metadata.json
+        ├── probe_scores.json
+        ├── activation_stats.json          aggregated per-layer per-group stats
+        ├── layer_group_data.json          per-sample stats (mean/std/l2/…)
+        ├── dead_neurons/                  dead-neuron analysis (if provided)
+        │   └── <axis>_dead_neurons.json
+        ├── neuron_raw/                    per-neuron raw activation CSVs
         │   └── <axis>/
-        │       └── <group>/
-        │           └── sample_<idx>/
-        │               └── <layer>.npy   full float32 tensor
+        │       └── <layer>.csv
+        └── activations/                   full float32 tensors as .npy
+            └── <axis>/
+                └── <group>/
+                    └── sample_<idx>/
+                        └── <layer>.npy
 
         Args:
-            path: destination file path (must end in .zip or will work anyway).
+            path: destination file path.
+            dead_neuron_reports: optional DeadNeuronDetector, DeadNeuronReport,
+                or dict {axis_name -> DeadNeuronReport}.
 
         Returns:
             Absolute path of the written zip file.
-
-        Example:
-            results = probe.run()
-            results.save("language_probe_run.zip")
         """
+        import csv as _csv
+
         out_path = Path(path).resolve()
+
+        # normalise dead_neuron_reports ──────────────────────────────────
+        dn_reports: Dict = {}
+        if dead_neuron_reports is not None:
+            if hasattr(dead_neuron_reports, "_reports"):
+                dn_reports = dead_neuron_reports._reports
+            elif hasattr(dead_neuron_reports, "axis_name"):
+                dn_reports = {dead_neuron_reports.axis_name: dead_neuron_reports}
+            elif isinstance(dead_neuron_reports, dict):
+                dn_reports = dead_neuron_reports
 
         with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
 
@@ -142,6 +161,8 @@ class ProbeResults:
                     }
                     for ax in self.axes
                 ],
+                "includes_dead_neuron_analysis": bool(dn_reports),
+                "includes_neuron_raw_csv":        bool(self._raw_activations),
             }
             zf.writestr("metadata.json", json.dumps(metadata, indent=2))
 
@@ -151,7 +172,7 @@ class ProbeResults:
                 json.dumps(self.probe_scores, indent=2),
             )
 
-            # ── 3. aggregated activation stats (per layer per group) ──
+            # ── 3. aggregated activation stats ────────────────────────
             agg_stats: Dict = {}
             for axis_name, layer_map in self._layer_group_data.items():
                 agg_stats[axis_name] = {}
@@ -170,8 +191,7 @@ class ProbeResults:
                 json.dumps(agg_stats, indent=2),
             )
 
-            # ── 4. per-sample stats (full layer_group_data) ───────────
-            # Convert to JSON-serialisable form
+            # ── 4. per-sample stats ───────────────────────────────────
             def _serialise_lgd(lgd: Dict) -> Dict:
                 out: Dict = {}
                 for axis_name, layer_map in lgd.items():
@@ -190,13 +210,62 @@ class ProbeResults:
                 json.dumps(_serialise_lgd(self._layer_group_data), indent=2),
             )
 
-            # ── 5. raw activation tensors ─────────────────────────────
+            # ── 5. dead neuron analysis JSONs ─────────────────────────
+            for axis_name, dn_report in dn_reports.items():
+                safe_axis = axis_name.replace(" ", "_").replace("/", "_")
+                fname = f"dead_neurons/{safe_axis}_dead_neurons.json"
+                zf.writestr(fname, json.dumps(dn_report.to_dict(), indent=2))
+
+            # ── 6. per-neuron raw activation CSVs ─────────────────────
+            # One CSV per (axis, layer).
+            # Columns: group, sample_idx, neuron_idx, activation
+            n_csvs = 0
+            axis_layer_rows: Dict[str, Dict[str, list]] = {}
+            for axis_name, groups in self._raw_activations.items():
+                axis_layer_rows[axis_name] = {}
+                for group_name, samples in groups.items():
+                    for sample_idx, layer_tensors in samples.items():
+                        for layer_name, tensor in layer_tensors.items():
+                            arr = tensor.float().cpu().numpy()
+                            arr = np.nan_to_num(arr, nan=0.0)
+                            # collapse all dims but last → per-neuron vector
+                            while arr.ndim > 1:
+                                arr = arr.mean(axis=0)
+                            arr = arr.flatten()
+                            axis_layer_rows[axis_name].setdefault(
+                                layer_name, []
+                            ).append((group_name, sample_idx, arr))
+
+            for axis_name, layer_map in axis_layer_rows.items():
+                safe_axis = axis_name.replace(" ", "_").replace("/", "_")
+                for layer_name, rows in layer_map.items():
+                    safe_layer = (
+                        layer_name
+                        .replace(".", "_")
+                        .replace("/", "_")
+                        .replace(" ", "_")
+                    )
+                    fname = f"neuron_raw/{safe_axis}/{safe_layer}.csv"
+                    buf = io.StringIO()
+                    writer = _csv.writer(buf)
+                    writer.writerow(["group", "sample_idx", "neuron_idx", "activation"])
+                    for group_name, sample_idx, neuron_vec in rows:
+                        for neuron_idx, act_val in enumerate(neuron_vec):
+                            writer.writerow([
+                                group_name,
+                                sample_idx,
+                                neuron_idx,
+                                f"{float(act_val):.8f}",
+                            ])
+                    zf.writestr(fname, buf.getvalue())
+                    n_csvs += 1
+
+            # ── 7. raw activation tensors (.npy) ──────────────────────
             n_tensors = 0
             for axis_name, groups in self._raw_activations.items():
                 for group_name, samples in groups.items():
                     for sample_idx, layer_tensors in samples.items():
                         for layer_name, tensor in layer_tensors.items():
-                            # Build a filesystem-safe path
                             safe_layer = (
                                 layer_name
                                 .replace(".", "_")
@@ -209,7 +278,6 @@ class ProbeResults:
                                 f"sample_{sample_idx:04d}/"
                                 f"{safe_layer}.npy"
                             )
-
                             arr = tensor.float().cpu().numpy()
                             buf = io.BytesIO()
                             np.save(buf, arr)
@@ -217,14 +285,10 @@ class ProbeResults:
                             n_tensors += 1
 
         logger.info(
-            f"Saved {n_tensors} tensors + metadata to '{out_path}'"
+            f"Saved {n_tensors} tensors + {n_csvs} neuron CSVs "
+            f"+ {len(dn_reports)} dead-neuron reports to '{out_path}'"
         )
         return str(out_path)
-
-    # ------------------------------------------------------------------
-    # Visualization
-    # ------------------------------------------------------------------
-
     def summary(
         self,
         top_k: Optional[int] = 5,

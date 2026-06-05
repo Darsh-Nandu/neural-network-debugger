@@ -27,6 +27,7 @@ Custom probe type:
 from nndbg.probe import ModelProbe
 from nndbg.results import ProbeResults
 from nndbg.probing.trainer import ProbeTrainer, PROBE_TYPES, AVAILABLE_FEATURES
+from nndbg.attribution.dead_neurons import DeadNeuronDetector, DeadNeuronReport
 from nndbg.utils.logging import set_verbose, is_verbose
 
 __version__ = "0.1.0"
@@ -38,4 +39,6 @@ __all__ = [
     "AVAILABLE_FEATURES",
     "set_verbose",
     "is_verbose",
+    "DeadNeuronDetector",
+    "DeadNeuronReport",
 ]
