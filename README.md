@@ -1,26 +1,42 @@
-# NNDbg — Mechanistic Interpretability Toolkit
+# NNDbg — a diagnostic toolkit for neural networks
 
 [![CI](https://github.com/Darsh-Nandu/neural-network-debugger/actions/workflows/ci.yml/badge.svg)](https://github.com/Darsh-Nandu/neural-network-debugger/actions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 
-NNDbg is a researcher-first interpretability toolkit for PyTorch and HuggingFace models.
-It answers both *where* concepts are encoded (probing) and *why* — which inputs caused a
-behaviour (attribution, causal tracing) — and goes further into feature-level decomposition
-via sparse autoencoders.
+NNDbg wraps a PyTorch or HuggingFace model in a single `Inspector` and
+answers the questions people actually ask when interpreting a neural
+network: where a concept is encoded, which inputs caused an output, what
+each attention head is doing, which layer causally produces a behaviour,
+and what features a layer's activations decompose into.
 
-## Feature overview
+## Analysis planes
 
-| Plane | What it answers | Key method |
-|-------|-----------------|------------|
-| **Probing** | Where is concept X encoded? | `inspector.probing.fit(dataset, concept="sentiment")` |
-| **Attribution** | Which tokens caused layer L to fire? | `inspector.attribution.saliency/ig/gradcam(...)` |
-| **Attention** | What does each head attend to? | `inspector.attention.per_head_heatmap(input_ids)` |
-| **Causal tracing** | Which layers *causally* produce a behaviour? | `inspector.patching.causal_trace(clean, corrupted)` |
-| **Concept erasure** | Can I remove concept X from the representations? | `inspector.erasure.leace(dataset, concept="gender")` |
-| **Geometry** | How does fine-tuning change representation structure? | `inspector.geometry.cka(dataset, layers_a=..., inspector_b=ft_model)` |
-| **Neurons** | Which inputs maximally activate neuron N? | `inspector.neurons.top_activating_inputs(dataset, neuron_idx=42)` |
-| **SAE** | What monosemantic features does this MLP learn? | `inspector.sae.train(dataset, layer=...)` |
+| `inspector.<plane>` | Answers | Method |
+|---|---|---|
+| `probing` | Where is concept X encoded? | cross-validated linear probes per layer |
+| `attribution` | Which inputs caused this output? | saliency, Integrated Gradients, Grad-CAM |
+| `attention` | What does each head attend to? | per-head heatmaps, rollout, entropy |
+| `patching` | Which layers causally produce a behaviour? | activation patching / causal tracing |
+| `sae` | What sparse features does a layer learn? | sparse autoencoder, train + decompose |
+| `latent` | Where do activations sit in a compressed space? | VAE latent space + anomaly detection |
+
+Every result is a plain dataclass with a `.plot()` method (matplotlib,
+zero-config) and an optional `.plotly()` method if you have `plotly`
+installed.
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for what's coming next (geometry/CKA,
+neuron-level analysis, concept erasure) — this release deliberately covers
+six planes well rather than many partially.
+
+## Installation
+
+```bash
+pip install nndbg
+
+# with interactive Plotly figures
+pip install nndbg[plotly]
+```
 
 ## Quick start
 
@@ -32,49 +48,64 @@ model = AutoModelForCausalLM.from_pretrained("gpt2")
 tokenizer = AutoTokenizer.from_pretrained("gpt2")
 inspector = Inspector(model, tokenizer)
 
-# See what's available
-inspector.summary()
-inspector.layers()[:5]
+inspector.summary()          # model + available planes
+inspector.layers()[:5]       # every layer name you can refer to
 
-# Probe for a concept
-dataset = [(tokenizer(t, return_tensors="pt")["input_ids"], label)
-           for t, label in [("I love this", 1), ("I hate this", 0)]]
-report = inspector.probing.fit(dataset, concept="sentiment")
-report.figure().show()
+# Attribution — which input tokens drove the prediction?
+input_ids = tokenizer("The capital of France is", return_tensors="pt").input_ids
+inspector.attribution.saliency(input_ids).plot()
 
-# Causal tracing
-clean     = tokenizer("Paris is the capital of France", return_tensors="pt")["input_ids"]
-corrupted = tokenizer("Berlin is the capital of France", return_tensors="pt")["input_ids"]
-patch     = inspector.patching.causal_trace(clean, corrupted)
-patch.figure().show()
+# Attention — what does head 0 of layer 0 attend to?
+inspector.attention.heads(input_ids, layer=0).plot()
+
+# Probing — is sentiment linearly decodable, and from which layer?
+dataset = [
+    (tokenizer(text, return_tensors="pt").input_ids, label)
+    for text, label in [
+        ("I love this movie", 1), ("I hate this movie", 0),
+        ("This is wonderful", 1), ("This is terrible", 0),
+    ]
+]
+inspector.probing.fit(dataset, concept="sentiment").plot()
 ```
 
-## Installation
+Any plain `nn.Module` works too — `tokenizer` is optional and only needed
+for token-level labeling.
 
-```bash
-# Core
-pip install nndbg
+### Activation patching / causal tracing
 
-# With gradient attribution (captum)
-pip install nndbg[attribution]
+```python
+clean = tokenizer("The Eiffel Tower is in the city of", return_tensors="pt").input_ids
+corrupted = tokenizer("The Space Needle is in the city of", return_tensors="pt").input_ids
 
-# With UMAP geometry
-pip install nndbg[geometry]
-
-# Everything
-pip install nndbg[all]
+result = inspector.patching.causal_trace(
+    clean, corrupted, layers=inspector.find_layers(r"h\.\d+$")
+)
+result.plot()  # (layer x position) logit-recovery heatmap
 ```
 
-## Architecture
+### Sparse autoencoders and VAE latent analysis
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design rationale and data flow.
+```python
+dataset = [tokenizer(t, return_tensors="pt").input_ids for t in texts]
 
-## Contributing
+# Sparse, (closer-to-)monosemantic feature decomposition
+inspector.sae.train(dataset, layer="transformer.h.6", n_features=512)
+inspector.sae.decompose(dataset, layer="transformer.h.6").plot()
+
+# Compressed latent space + reconstruction-error anomaly detection
+inspector.latent.train(dataset, layer="transformer.h.6", latent_dim=2)
+result = inspector.latent.encode(dataset, layer="transformer.h.6")
+result.plot()
+result.anomalies()  # indices of outlier examples
+```
+
+## Development
 
 ```bash
 git clone https://github.com/Darsh-Nandu/neural-network-debugger
 cd neural-network-debugger
 pip install -e ".[dev]"
-pre-commit install
-pytest tests/unit/
+ruff check nndbg tests
+pytest
 ```

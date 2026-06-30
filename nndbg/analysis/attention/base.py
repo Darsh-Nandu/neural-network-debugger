@@ -68,10 +68,10 @@ class AttentionAnalyzer:
         n_heads = attentions[0].shape[1]
         scores = torch.zeros(n_layers, n_heads)
 
-        for l, layer_attn in enumerate(attentions):
+        for layer_idx, layer_attn in enumerate(attentions):
             probs = layer_attn[0]  # (heads, seq, seq)
             ent = -(probs * probs.clamp_min(1e-12).log()).sum(dim=-1).mean(dim=-1)
-            scores[l] = ent.detach().cpu()
+            scores[layer_idx] = ent.detach().cpu()
 
         return AttentionResult(kind="entropy", matrix=scores, head_scores=scores, tokens=self._tokens(input_ids))
 

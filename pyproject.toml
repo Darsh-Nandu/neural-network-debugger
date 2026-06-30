@@ -4,20 +4,23 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nndbg"
-version = "0.2.0"
-description = "A modular mechanistic interpretability toolkit for PyTorch and HuggingFace models"
+version = "0.1.0"
+description = "A focused, practical toolkit for diagnosing and interpreting neural networks: probing, attribution, attention analysis, activation patching, sparse autoencoders, and VAE latent analysis."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = { file = "LICENSE.md" }
 requires-python = ">=3.10"
 authors = [{ name = "Darsh Nandu" }]
 
 keywords = [
+  "interpretability",
   "mechanistic-interpretability",
   "neural-networks",
   "explainability",
   "transformers",
   "probing",
   "activation-patching",
+  "sparse-autoencoder",
+  "pytorch",
 ]
 
 classifiers = [
@@ -28,52 +31,35 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
   "torch>=2.1",
-  "transformers>=4.38",
-  "duckdb>=0.10",
+  "transformers>=4.40",
   "scikit-learn>=1.4",
-  "plotly>=5.20",
+  "matplotlib>=3.8",
   "numpy>=1.26",
-  "pandas>=2.2",
-  "einops>=0.7",
-  "tqdm>=4.66",
   "rich>=13.7",
-  "typer>=0.12",
-  "pydantic>=2.6",
 ]
 
 [project.optional-dependencies]
-attribution = [
-  "captum>=0.7",
-]
-geometry = [
-  "umap-learn>=0.5",
-]
-sae = [
-  "transformer-lens>=1.14",
+plotly = [
+  "plotly>=5.20",
 ]
 dev = [
   "pytest>=8.0",
   "pytest-cov>=5.0",
   "ruff>=0.4",
-  "mypy>=1.9",
-  "pre-commit>=3.7",
   "ipykernel",
   "jupyter",
 ]
 all = [
-  "nndbg[attribution,geometry,sae,dev]",
+  "nndbg[plotly,dev]",
 ]
-
-[project.scripts]
-nndbg = "nndbg.cli.main:app"
 
 [project.urls]
 Homepage = "https://github.com/Darsh-Nandu/neural-network-debugger"
-Documentation = "https://nndbg.readthedocs.io"
 Repository = "https://github.com/Darsh-Nandu/neural-network-debugger"
 Issues = "https://github.com/Darsh-Nandu/neural-network-debugger/issues"
 
@@ -81,21 +67,22 @@ Issues = "https://github.com/Darsh-Nandu/neural-network-debugger/issues"
 packages = ["nndbg"]
 
 [tool.ruff]
-line-length = 100
+line-length = 110
 target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]
 
-[tool.mypy]
-python_version = "3.10"
-strict = false
-ignore_missing_imports = true
+[tool.ruff.lint.per-file-ignores]
+# X is the standard name for a design/feature matrix in ML code (sklearn,
+# numpy, captum all use it); torch.nn.functional as F is the universal
+# convention.
+"nndbg/analysis/**/base.py" = ["N806", "N812"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=nndbg --cov-report=term-missing -v"
+addopts = "--cov=nndbg --cov-report=term-missing"
 
 [tool.coverage.run]
-omit = ["tests/*", "notebooks/*"]
+omit = ["tests/*"]

@@ -68,7 +68,7 @@ class AttentionResult:
         return heatmap(
             self.head_scores.numpy(),
             xticklabels=[f"head {h}" for h in range(n_heads)],
-            yticklabels=[f"layer {l}" for l in range(n_layers)],
+            yticklabels=[f"layer {layer_idx}" for layer_idx in range(n_layers)],
             title="Attention entropy per head (higher = more diffuse)",
             colorbar_label="entropy (nats)",
         )
