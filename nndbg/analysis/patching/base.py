@@ -32,7 +32,7 @@ class PatchingAnalyzer:
         result.plot()
     """
 
-    def __init__(self, inspector: "Inspector") -> None:
+    def __init__(self, inspector: Inspector) -> None:
         self._inspector = inspector
 
     def causal_trace(

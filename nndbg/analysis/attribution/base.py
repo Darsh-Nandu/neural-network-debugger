@@ -6,7 +6,8 @@ saliency (Simonyan et al. 2014), Integrated Gradients (Sundararajan et al.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -33,7 +34,7 @@ class AttributionAnalyzer:
         result.plot()
     """
 
-    def __init__(self, inspector: "Inspector") -> None:
+    def __init__(self, inspector: Inspector) -> None:
         self._inspector = inspector
 
     # ------------------------------------------------------------------

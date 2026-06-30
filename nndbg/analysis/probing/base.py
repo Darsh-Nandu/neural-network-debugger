@@ -1,7 +1,8 @@
 """ProbingAnalyzer — answers "where is concept X encoded?" via linear probes."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -25,7 +26,7 @@ class ProbingAnalyzer:
         result.plot()
     """
 
-    def __init__(self, inspector: "Inspector") -> None:
+    def __init__(self, inspector: Inspector) -> None:
         self._inspector = inspector
 
     def fit(

@@ -6,7 +6,8 @@ Monosemanticity" (Bricken et al., 2023).
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -59,7 +60,7 @@ class SAEAnalyzer:
         result.plot()
     """
 
-    def __init__(self, inspector: "Inspector") -> None:
+    def __init__(self, inspector: Inspector) -> None:
         self._inspector = inspector
         self._trained: dict[str, SparseAutoencoder] = {}
 

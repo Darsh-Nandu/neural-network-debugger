@@ -1,4 +1,3 @@
-from nndbg.viz import plotting
-from nndbg.viz import plotly_backend
+from nndbg.viz import plotly_backend, plotting
 
 __all__ = ["plotting", "plotly_backend"]

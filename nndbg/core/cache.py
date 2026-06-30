@@ -1,8 +1,8 @@
 """ActivationCache — dict-like container for captured activations."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import torch
 
@@ -50,7 +50,7 @@ class ActivationCache:
         torch.save(self._data, Path(path))
 
     @classmethod
-    def load(cls, path: str | Path) -> "ActivationCache":
+    def load(cls, path: str | Path) -> ActivationCache:
         cache = cls()
         cache._data = torch.load(Path(path), map_location="cpu")
         return cache

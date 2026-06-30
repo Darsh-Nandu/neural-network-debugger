@@ -23,7 +23,7 @@ class AttentionAnalyzer:
         inspector.attention.rollout(input_ids).plot()
     """
 
-    def __init__(self, inspector: "Inspector") -> None:
+    def __init__(self, inspector: Inspector) -> None:
         self._inspector = inspector
 
     def heads(self, input_ids: torch.Tensor, *, layer: int = -1) -> AttentionResult:
@@ -84,8 +84,14 @@ class AttentionAnalyzer:
 
         self._force_eager_attention()
 
-        with torch.no_grad():
-            output = inspector.model(input_ids, output_attentions=True)
+        try:
+            with torch.no_grad():
+                output = inspector.model(input_ids, output_attentions=True)
+        except TypeError as exc:
+            raise RuntimeError(
+                f"{type(inspector.model).__name__} does not accept output_attentions=True. "
+                f"inspector.attention requires a HuggingFace transformer model."
+            ) from exc
         attentions = getattr(output, "attentions", None)
         if not attentions:
             raise RuntimeError(

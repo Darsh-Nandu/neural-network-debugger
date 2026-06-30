@@ -18,7 +18,7 @@ _PLANES = [
 ]
 
 
-def print_summary(inspector: "Inspector") -> None:
+def print_summary(inspector: Inspector) -> None:
     from rich.table import Table
 
     model_name = type(inspector.model).__name__

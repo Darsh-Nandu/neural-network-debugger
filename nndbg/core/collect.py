@@ -1,7 +1,8 @@
 """Shared activation-collection helper used by probing, SAE, and VAE planes."""
 from __future__ import annotations
 
-from typing import Iterable, Literal
+from collections.abc import Iterable
+from typing import Literal
 
 import torch
 import torch.nn as nn

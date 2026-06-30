@@ -50,18 +50,18 @@ class Inspector:
         self._registry = LayerRegistry(model)
         self._hooks = HookManager(model, self._registry)
 
-        self._probing: "ProbingAnalyzer | None" = None
-        self._attribution: "AttributionAnalyzer | None" = None
-        self._attention: "AttentionAnalyzer | None" = None
-        self._patching: "PatchingAnalyzer | None" = None
-        self._sae: "SAEAnalyzer | None" = None
-        self._latent: "LatentAnalyzer | None" = None
+        self._probing: ProbingAnalyzer | None = None
+        self._attribution: AttributionAnalyzer | None = None
+        self._attention: AttentionAnalyzer | None = None
+        self._patching: PatchingAnalyzer | None = None
+        self._sae: SAEAnalyzer | None = None
+        self._latent: LatentAnalyzer | None = None
 
     # ------------------------------------------------------------------
     # Sub-analyzer properties (lazy init)
     # ------------------------------------------------------------------
     @property
-    def probing(self) -> "ProbingAnalyzer":
+    def probing(self) -> ProbingAnalyzer:
         if self._probing is None:
             from nndbg.analysis.probing.base import ProbingAnalyzer
 
@@ -69,7 +69,7 @@ class Inspector:
         return self._probing
 
     @property
-    def attribution(self) -> "AttributionAnalyzer":
+    def attribution(self) -> AttributionAnalyzer:
         if self._attribution is None:
             from nndbg.analysis.attribution.base import AttributionAnalyzer
 
@@ -77,7 +77,7 @@ class Inspector:
         return self._attribution
 
     @property
-    def attention(self) -> "AttentionAnalyzer":
+    def attention(self) -> AttentionAnalyzer:
         if self._attention is None:
             from nndbg.analysis.attention.base import AttentionAnalyzer
 
@@ -85,7 +85,7 @@ class Inspector:
         return self._attention
 
     @property
-    def patching(self) -> "PatchingAnalyzer":
+    def patching(self) -> PatchingAnalyzer:
         if self._patching is None:
             from nndbg.analysis.patching.base import PatchingAnalyzer
 
@@ -93,7 +93,7 @@ class Inspector:
         return self._patching
 
     @property
-    def sae(self) -> "SAEAnalyzer":
+    def sae(self) -> SAEAnalyzer:
         if self._sae is None:
             from nndbg.analysis.sae.base import SAEAnalyzer
 
@@ -101,7 +101,7 @@ class Inspector:
         return self._sae
 
     @property
-    def latent(self) -> "LatentAnalyzer":
+    def latent(self) -> LatentAnalyzer:
         if self._latent is None:
             from nndbg.analysis.latent.base import LatentAnalyzer
 

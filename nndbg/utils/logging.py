@@ -5,7 +5,9 @@ Call nndbg.set_verbose(True) to turn on logging.
 """
 
 import logging
+
 from rich.logging import RichHandler
+
 from nndbg.utils.console import console
 
 # Global verbose flag — OFF by default
