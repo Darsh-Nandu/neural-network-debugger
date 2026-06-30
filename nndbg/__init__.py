@@ -7,6 +7,7 @@ autoencoders, VAE latent analysis) for PyTorch and HuggingFace models.
 """
 
 from nndbg._version import __version__
-from nndbg.utils.logging import set_verbose, is_verbose
+from nndbg.inspector import Inspector
+from nndbg.utils.logging import is_verbose, set_verbose
 
-__all__ = ["__version__", "set_verbose", "is_verbose"]
+__all__ = ["Inspector", "__version__", "set_verbose", "is_verbose"]
