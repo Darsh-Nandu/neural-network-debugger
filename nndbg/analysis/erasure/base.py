@@ -91,7 +91,7 @@ class ErasureAnalyzer:
         actual_iters = 0
 
         for _ in range(n_iters):
-            clf = LogisticRegression(max_iter=max_iter, solver="lbfgs", multi_class="auto")
+            clf = LogisticRegression(max_iter=max_iter, solver="lbfgs")
             clf.fit(X, y)
             acc = float(clf.score(X, y))
             accuracy_trace.append(acc)
