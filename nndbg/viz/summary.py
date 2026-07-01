@@ -9,12 +9,15 @@ if TYPE_CHECKING:
     from nndbg.inspector import Inspector
 
 _PLANES = [
-    ("probing", "Where is concept X encoded? - linear probes per layer"),
-    ("attribution", "Which inputs caused this output? - saliency / IG / GradCAM"),
-    ("attention", "What does each head attend to? - per-head heatmaps, rollout"),
-    ("patching", "Which layers causally produce a behaviour? - activation patching"),
-    ("sae", "What sparse features does this layer learn? - sparse autoencoder"),
-    ("latent", "Where do activations sit in a compressed latent space? - VAE"),
+    ("probing", "Where is concept X encoded? - linear/SVM/MLP probes per layer"),
+    ("attribution", "Which inputs caused this output? - saliency / GxI / SmoothGrad / IG / GradCAM"),
+    ("attention", "What does each head attend to? - per-head heatmaps, rollout, entropy"),
+    ("patching", "Which layers causally produce a behaviour? - causal trace / mean ablation"),
+    ("sae", "What sparse features does this layer learn? - ReLU or top-k autoencoder"),
+    ("latent", "Where do activations sit in a compressed latent space? - VAE + anomaly"),
+    ("geometry", "How similar are layers to each other? - linear CKA, PCA, UMAP"),
+    ("neurons", "What is each neuron doing? - dead neurons, top examples, kurtosis"),
+    ("erasure", "Remove a concept from representations - INLP null-space projection"),
 ]
 
 

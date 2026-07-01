@@ -1,12 +1,12 @@
 """Result type for the probing analysis plane."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
 class ProbeResult:
-    """Cross-validated linear-probe accuracy for a concept, layer by layer."""
+    """Cross-validated probe accuracy for a concept, layer by layer."""
 
     concept: str
     layers: list[str]
@@ -14,6 +14,7 @@ class ProbeResult:
     std: list[float]
     n_samples: int
     n_classes: int
+    method: str = field(default="logistic")
 
     def best_layer(self) -> str:
         """Layer with the highest mean cross-validated accuracy."""
@@ -29,7 +30,7 @@ class ProbeResult:
             self.layers,
             {self.concept: self.accuracy},
             yerr={self.concept: self.std},
-            title=f"Probe accuracy by layer — concept: {self.concept!r}",
+            title=f"Probe accuracy by layer — concept: {self.concept!r} ({self.method})",
             xlabel="layer",
             ylabel="cross-validated accuracy",
             ax=ax,
@@ -41,7 +42,7 @@ class ProbeResult:
         return line(
             self.layers,
             {self.concept: self.accuracy},
-            title=f"Probe accuracy by layer — concept: {self.concept!r}",
+            title=f"Probe accuracy by layer — concept: {self.concept!r} ({self.method})",
             xlabel="layer",
             ylabel="accuracy",
         )
@@ -50,6 +51,6 @@ class ProbeResult:
         best = self.best_layer()
         best_acc = self.accuracy[self.layers.index(best)]
         return (
-            f"ProbeResult(concept={self.concept!r}, n_layers={len(self.layers)}, "
-            f"best_layer={best!r}, best_accuracy={best_acc:.3f})"
+            f"ProbeResult(concept={self.concept!r}, method={self.method!r}, "
+            f"n_layers={len(self.layers)}, best_layer={best!r}, best_accuracy={best_acc:.3f})"
         )

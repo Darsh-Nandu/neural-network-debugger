@@ -47,3 +47,29 @@ def test_gradcam_on_transformer_block(transformer_inspector):
     input_ids = torch.randint(0, 100, (1, 6))
     result = transformer_inspector.attribution.gradcam(input_ids, layer="transformer.h.0")
     assert result.scores.shape == (6,)
+
+
+def test_gradient_x_input_shape(mlp_inspector):
+    x = torch.randn(1, 4)
+    result = mlp_inspector.attribution.gradient_x_input(x)
+    assert result.scores.shape == (4,)
+    assert result.method == "gradient_x_input"
+
+
+def test_smoothgrad_shape(mlp_inspector):
+    x = torch.randn(1, 4)
+    result = mlp_inspector.attribution.smoothgrad(x, n_samples=5)
+    assert result.scores.shape == (4,)
+    assert result.method == "smoothgrad"
+
+
+def test_smoothgrad_on_token_inputs(transformer_inspector):
+    input_ids = torch.randint(0, 100, (1, 6))
+    result = transformer_inspector.attribution.smoothgrad(input_ids, n_samples=5)
+    assert result.scores.shape == (6,)
+
+
+def test_gradient_x_input_on_token_inputs(transformer_inspector):
+    input_ids = torch.randint(0, 100, (1, 6))
+    result = transformer_inspector.attribution.gradient_x_input(input_ids)
+    assert result.scores.shape == (6,)

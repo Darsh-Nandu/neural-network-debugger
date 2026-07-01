@@ -1,8 +1,9 @@
 """AttributionAnalyzer — which inputs caused this output?
 
 Implements gradient-based attribution natively (no captum dependency):
-saliency (Simonyan et al. 2014), Integrated Gradients (Sundararajan et al.
-2017), and Grad-CAM (Selvaraju et al. 2017) adapted to sequence models.
+saliency (Simonyan et al. 2014), gradient × input, SmoothGrad (Smilkov
+et al. 2017), Integrated Gradients (Sundararajan et al. 2017), and
+Grad-CAM (Selvaraju et al. 2017) adapted to sequence models.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ class AttributionAnalyzer:
 
     For token-input models (anything exposing ``get_input_embeddings()``,
     e.g. HuggingFace causal LMs) attribution is computed per input token,
-    routed through ``inputs_embeds`` so the embedding lookup itself stays
+    routed through ``inputs_embeds`` so the embedding lookup stays
     differentiable. For other models, gradients are taken directly with
     respect to the input tensor.
 
@@ -32,13 +33,18 @@ class AttributionAnalyzer:
 
         result = inspector.attribution.saliency(input_ids)
         result.plot()
+        inspector.attribution.integrated_gradients(input_ids).plot()
+        inspector.attribution.smoothgrad(input_ids).plot()
+        inspector.attribution.gradient_x_input(input_ids).plot()
     """
 
     def __init__(self, inspector: Inspector) -> None:
         self._inspector = inspector
 
     # ------------------------------------------------------------------
-    def saliency(self, inputs: torch.Tensor, *, target=None, target_fn: TargetFn | None = None) -> AttributionResult:
+    def saliency(
+        self, inputs: torch.Tensor, *, target=None, target_fn: TargetFn | None = None
+    ) -> AttributionResult:
         """Vanilla gradient saliency: ``||d(target)/d(input)||`` per position."""
         embeds, mode = self._embed(inputs)
         embeds = embeds.clone().requires_grad_(True)
@@ -47,6 +53,48 @@ class AttributionAnalyzer:
         (grad,) = torch.autograd.grad(target_value, embeds)
         scores = _position_scores(grad)
         return AttributionResult(method="saliency", scores=scores.detach().cpu(), tokens=self._tokens(inputs))
+
+    def gradient_x_input(
+        self, inputs: torch.Tensor, *, target=None, target_fn: TargetFn | None = None
+    ) -> AttributionResult:
+        """Gradient × input: element-wise product of the gradient and the
+        input embedding, a sign-aware refinement of vanilla saliency that
+        cancels out large gradients at near-zero embedding dimensions."""
+        embeds, mode = self._embed(inputs)
+        embeds_req = embeds.clone().requires_grad_(True)
+        logits = self._forward(embeds_req, mode)
+        target_value = self._select_target(logits, target, target_fn)
+        (grad,) = torch.autograd.grad(target_value, embeds_req)
+        gxi = grad * embeds.detach()
+        scores = _position_scores(gxi)
+        return AttributionResult(
+            method="gradient_x_input", scores=scores.detach().cpu(), tokens=self._tokens(inputs)
+        )
+
+    def smoothgrad(
+        self,
+        inputs: torch.Tensor,
+        *,
+        target=None,
+        target_fn: TargetFn | None = None,
+        n_samples: int = 50,
+        noise_std: float = 0.1,
+    ) -> AttributionResult:
+        """SmoothGrad: average gradient magnitude over ``n_samples`` forward
+        passes with Gaussian noise added to the input embeddings.
+
+        Reduces the visual noise of vanilla saliency by marginalising over
+        small input perturbations. Larger ``noise_std`` = more smoothing."""
+        embeds, mode = self._embed(inputs)
+        total_grad = torch.zeros_like(embeds)
+        for _ in range(n_samples):
+            noisy = (embeds + noise_std * torch.randn_like(embeds)).clone().requires_grad_(True)
+            logits = self._forward(noisy, mode)
+            target_value = self._select_target(logits, target, target_fn)
+            (grad,) = torch.autograd.grad(target_value, noisy)
+            total_grad = total_grad + grad.detach()
+        scores = _position_scores(total_grad / n_samples)
+        return AttributionResult(method="smoothgrad", scores=scores.cpu(), tokens=self._tokens(inputs))
 
     def integrated_gradients(
         self,

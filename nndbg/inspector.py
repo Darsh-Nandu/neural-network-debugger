@@ -17,7 +17,10 @@ from nndbg.core.registry import LayerRegistry
 if TYPE_CHECKING:
     from nndbg.analysis.attention.base import AttentionAnalyzer
     from nndbg.analysis.attribution.base import AttributionAnalyzer
+    from nndbg.analysis.erasure.base import ErasureAnalyzer
+    from nndbg.analysis.geometry.base import GeometryAnalyzer
     from nndbg.analysis.latent.base import LatentAnalyzer
+    from nndbg.analysis.neurons.base import NeuronAnalyzer
     from nndbg.analysis.patching.base import PatchingAnalyzer
     from nndbg.analysis.probing.base import ProbingAnalyzer
     from nndbg.analysis.sae.base import SAEAnalyzer
@@ -56,6 +59,9 @@ class Inspector:
         self._patching: PatchingAnalyzer | None = None
         self._sae: SAEAnalyzer | None = None
         self._latent: LatentAnalyzer | None = None
+        self._geometry: GeometryAnalyzer | None = None
+        self._neurons: NeuronAnalyzer | None = None
+        self._erasure: ErasureAnalyzer | None = None
 
     # ------------------------------------------------------------------
     # Sub-analyzer properties (lazy init)
@@ -107,6 +113,30 @@ class Inspector:
 
             self._latent = LatentAnalyzer(self)
         return self._latent
+
+    @property
+    def geometry(self) -> GeometryAnalyzer:
+        if self._geometry is None:
+            from nndbg.analysis.geometry.base import GeometryAnalyzer
+
+            self._geometry = GeometryAnalyzer(self)
+        return self._geometry
+
+    @property
+    def neurons(self) -> NeuronAnalyzer:
+        if self._neurons is None:
+            from nndbg.analysis.neurons.base import NeuronAnalyzer
+
+            self._neurons = NeuronAnalyzer(self)
+        return self._neurons
+
+    @property
+    def erasure(self) -> ErasureAnalyzer:
+        if self._erasure is None:
+            from nndbg.analysis.erasure.base import ErasureAnalyzer
+
+            self._erasure = ErasureAnalyzer(self)
+        return self._erasure
 
     # ------------------------------------------------------------------
     # Convenience helpers

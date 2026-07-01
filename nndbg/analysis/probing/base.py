@@ -15,8 +15,8 @@ if TYPE_CHECKING:
 
 
 class ProbingAnalyzer:
-    """Trains a linear probe per layer to test whether a concept is
-    linearly decodable from that layer's representation.
+    """Trains a probe per layer to test whether a concept is linearly
+    decodable from that layer's representation.
 
     Example::
 
@@ -38,9 +38,10 @@ class ProbingAnalyzer:
         pooling: str = "last",
         cv: int = 5,
         max_iter: int = 1000,
+        method: str = "logistic",
     ) -> ProbeResult:
-        """Train a cross-validated logistic-regression probe at every
-        requested layer and report accuracy per layer.
+        """Train a cross-validated probe at every requested layer and report
+        accuracy per layer.
 
         Args:
             dataset: ``(input_ids, label)`` pairs. Needs at least 2 examples
@@ -48,14 +49,18 @@ class ProbingAnalyzer:
                 class has fewer than ``cv`` examples).
             concept: a name for what this probe is testing, used in plots.
             layers: layer names to probe (see ``inspector.layers()``).
-                Defaults to every registered layer — for large models,
-                passing an explicit, smaller list is faster and more
-                interpretable (e.g. one entry per transformer block).
+                Defaults to every registered layer.
             pooling: how to collapse the sequence dimension before probing
                 — ``"last"``, ``"mean"``, or ``"first"`` token.
             cv: number of cross-validation folds.
+            max_iter: maximum iterations for the classifier's solver.
+            method: probe classifier to use:
+                ``"logistic"`` (default) — logistic regression, fast,
+                well-calibrated, interpretable weight vector.
+                ``"svm"`` — linear SVM, good margin, no probability output.
+                ``"mlp"`` — 1-hidden-layer MLP (64 units), detects nonlinear
+                structure but slower and harder to interpret.
         """
-        from sklearn.linear_model import LogisticRegression
         from sklearn.model_selection import StratifiedKFold, cross_val_score
         from sklearn.preprocessing import LabelEncoder
 
@@ -83,12 +88,12 @@ class ProbingAnalyzer:
             device=inspector.device,
         )
 
+        clf_factory = _make_clf_factory(method, max_iter)
         accuracies, stds = [], []
         splitter = StratifiedKFold(n_splits=cv, shuffle=True, random_state=0)
         for name in layer_names:
             X = activations[name].cpu().numpy()
-            clf = LogisticRegression(max_iter=max_iter)
-            scores = cross_val_score(clf, X, y, cv=splitter)
+            scores = cross_val_score(clf_factory(), X, y, cv=splitter)
             accuracies.append(float(scores.mean()))
             stds.append(float(scores.std()))
 
@@ -99,4 +104,21 @@ class ProbingAnalyzer:
             std=stds,
             n_samples=len(dataset),
             n_classes=len(encoder.classes_),
+            method=method,
         )
+
+
+def _make_clf_factory(method: str, max_iter: int):
+    if method == "logistic":
+        from sklearn.linear_model import LogisticRegression
+
+        return lambda: LogisticRegression(max_iter=max_iter)
+    if method == "svm":
+        from sklearn.svm import LinearSVC
+
+        return lambda: LinearSVC(max_iter=max_iter, dual="auto")
+    if method == "mlp":
+        from sklearn.neural_network import MLPClassifier
+
+        return lambda: MLPClassifier(hidden_layer_sizes=(64,), max_iter=max_iter, random_state=0)
+    raise ValueError(f"method must be 'logistic', 'svm', or 'mlp'; got {method!r}")

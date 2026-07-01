@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nndbg"
-version = "0.1.0"
-description = "A focused, practical toolkit for diagnosing and interpreting neural networks: probing, attribution, attention analysis, activation patching, sparse autoencoders, and VAE latent analysis."
+version = "0.2.0"
+description = "A focused, practical toolkit for diagnosing and interpreting neural networks: probing, attribution, attention, activation patching, sparse autoencoders, VAE latent analysis, CKA geometry, neuron analysis, and concept erasure."
 readme = "README.md"
 license = { file = "LICENSE.md" }
 requires-python = ">=3.10"
@@ -75,10 +75,11 @@ select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-# X is the standard name for a design/feature matrix in ML code (sklearn,
-# numpy, captum all use it); torch.nn.functional as F is the universal
-# convention.
-"nndbg/analysis/**/base.py" = ["N806", "N812"]
+# X/Y are standard matrix names in ML; F = torch.nn.functional; P = projection matrix.
+"nndbg/analysis/**/base.py" = ["N803", "N806", "N812"]
+"nndbg/analysis/**/results.py" = ["N806"]
+# umap import: PLC0415 = import-outside-top-level (intentional lazy optional dep)
+"nndbg/analysis/geometry/base.py" = ["N803", "N806", "N812", "PLC0415"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

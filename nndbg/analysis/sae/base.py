@@ -3,6 +3,12 @@
 Implements a minimal trainable sparse autoencoder for decomposing a layer's
 activations into sparse features, following Anthropic's "Towards
 Monosemanticity" (Bricken et al., 2023).
+
+Supports two activation functions:
+- ``"relu"`` (default): L1-penalised sparsity, soft and continuous.
+- ``"topk:<k>"``: keep exactly the top-k features per example (e.g.
+  ``"topk:32"``), giving exact control over sparsity level. Follows
+  Gao et al. (2024) "Scaling and evaluating sparse autoencoders".
 """
 from __future__ import annotations
 
@@ -20,32 +26,60 @@ if TYPE_CHECKING:
     from nndbg.inspector import Inspector
 
 
+class _TopK(nn.Module):
+    """Keep only the k largest (post-ReLU) feature activations per example."""
+
+    def __init__(self, k: int) -> None:
+        super().__init__()
+        self.k = k
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.relu(x)
+        k = min(self.k, x.shape[-1])
+        topk_vals, topk_idx = x.topk(k, dim=-1)
+        out = torch.zeros_like(x)
+        return out.scatter_(-1, topk_idx, topk_vals)
+
+
 class SparseAutoencoder(nn.Module):
     """One hidden layer, overcomplete: ``hidden_dim -> n_features -> hidden_dim``.
 
-    Trained with MSE reconstruction loss + an L1 penalty on the feature
-    activations to encourage sparsity (most features off for any given
-    input); decoder columns are re-normalized to unit norm after every
-    step, the standard trick that keeps the L1 penalty from being
-    trivially gamed by shrinking the decoder weights.
+    Trained with MSE reconstruction loss + an L1 penalty (or a top-k
+    activation) on the feature activations to encourage sparsity; decoder
+    columns are re-normalized to unit norm after every step, the standard
+    trick that keeps the L1 penalty from being trivially gamed by shrinking
+    the decoder weights.
     """
 
-    def __init__(self, input_dim: int, n_features: int) -> None:
+    def __init__(self, input_dim: int, n_features: int, *, activation: str = "relu") -> None:
         super().__init__()
         self.encoder = nn.Linear(input_dim, n_features, bias=True)
         self.decoder = nn.Linear(n_features, input_dim, bias=True)
+        self.activation_name = activation
         with torch.no_grad():
             self.decoder.weight.data = F.normalize(self.decoder.weight.data, dim=0)
 
+        if activation == "relu":
+            self._act: nn.Module = nn.ReLU()
+        elif activation.startswith("topk:"):
+            k = int(activation.split(":")[1])
+            self._act = _TopK(k)
+        else:
+            raise ValueError(
+                f"activation must be 'relu' or 'topk:<k>' (e.g. 'topk:32'); got {activation!r}"
+            )
+
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        features = F.relu(self.encoder(x))
+        features = self._act(self.encoder(x))
         reconstruction = self.decoder(features)
         return features, reconstruction
 
     def loss(self, x, features, reconstruction, l1_coeff: float = 1e-3) -> torch.Tensor:
         mse = F.mse_loss(reconstruction, x)
-        l1 = l1_coeff * features.abs().mean()
-        return mse + l1
+        if self.activation_name == "relu":
+            # L1 sparsity penalty only meaningful for ReLU; top-k is already exact
+            return mse + l1_coeff * features.abs().mean()
+        return mse
 
     @torch.no_grad()
     def renormalize_decoder(self) -> None:
@@ -58,6 +92,9 @@ class SAEAnalyzer:
         sae = inspector.sae.train(dataset, layer="transformer.h.4", n_features=512)
         result = inspector.sae.decompose(dataset, layer="transformer.h.4")
         result.plot()
+
+        # top-k activation: exact sparsity control (k active features per example)
+        sae = inspector.sae.train(dataset, layer=..., n_features=512, activation="topk:32")
     """
 
     def __init__(self, inspector: Inspector) -> None:
@@ -75,10 +112,17 @@ class SAEAnalyzer:
         lr: float = 1e-3,
         l1_coeff: float = 1e-3,
         batch_size: int = 32,
+        activation: str = "relu",
     ) -> SparseAutoencoder:
         """Train a sparse autoencoder on ``layer``'s activations, collected
         across every example in ``dataset``. Registers the trained SAE so a
-        later ``decompose(..., layer=layer)`` call can reuse it."""
+        later ``decompose(..., layer=layer)`` call can reuse it.
+
+        Args:
+            activation: ``"relu"`` (default, L1-penalised) or ``"topk:<k>"``
+                for exact top-k sparsity (e.g. ``"topk:32"`` keeps 32 active
+                features per example, ignoring ``l1_coeff``).
+        """
         from torch.utils.data import DataLoader, TensorDataset
 
         inspector = self._inspector
@@ -88,7 +132,7 @@ class SAEAnalyzer:
         X = activations[layer].float()
         input_dim = X.shape[-1]
 
-        sae = SparseAutoencoder(input_dim, n_features).to(inspector.device)
+        sae = SparseAutoencoder(input_dim, n_features, activation=activation).to(inspector.device)
         optimizer = torch.optim.Adam(sae.parameters(), lr=lr)
         loader = DataLoader(TensorDataset(X), batch_size=min(batch_size, len(X)), shuffle=True)
 

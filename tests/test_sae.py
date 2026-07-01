@@ -31,3 +31,23 @@ def test_sae_plots_run(transformer_inspector, token_dataset):
     result = transformer_inspector.sae.decompose(token_dataset, layer="transformer.h.0")
     result.plot()
     result.plot_training()
+
+
+def test_sae_topk_activation_exact_sparsity(transformer_inspector, token_dataset):
+    k = 4
+    transformer_inspector.sae.train(
+        token_dataset, layer="transformer.h.1", n_features=32, epochs=5, activation=f"topk:{k}"
+    )
+    result = transformer_inspector.sae.decompose(token_dataset, layer="transformer.h.1")
+    # Each example has exactly k active features; all others should be 0
+    active_per_example = (result.feature_activations.abs() > 1e-6).sum(dim=-1)
+    assert (active_per_example <= k).all()
+
+
+def test_sae_topk_invalid_raises():
+    import pytest
+
+    from nndbg.analysis.sae.base import SparseAutoencoder
+
+    with pytest.raises(ValueError, match="activation"):
+        SparseAutoencoder(16, 64, activation="invalid")

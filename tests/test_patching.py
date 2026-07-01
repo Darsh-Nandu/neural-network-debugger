@@ -44,3 +44,28 @@ def test_causal_trace_plot_runs(transformer_inspector):
     corrupted[0, 1] = (corrupted[0, 1] + 1) % 100
     result = transformer_inspector.patching.causal_trace(clean, corrupted, layers=["transformer.h.0"])
     assert result.plot() is not None
+
+
+def test_causal_trace_method_field(transformer_inspector):
+    clean = torch.randint(0, 100, (1, 6))
+    corrupted = clean.clone()
+    corrupted[0, 1] = (corrupted[0, 1] + 1) % 100
+    result = transformer_inspector.patching.causal_trace(clean, corrupted, layers=["transformer.h.0"])
+    assert result.method == "causal_trace"
+
+
+def test_mean_ablation_shape(transformer_inspector, token_dataset):
+    clean = torch.randint(0, 100, (1, 6))
+    layers = transformer_inspector.find_layers(r"h\.\d+$")
+    result = transformer_inspector.patching.mean_ablation(clean, token_dataset, layers=layers)
+    assert result.matrix.shape == (len(layers), 6)
+    assert result.method == "mean_ablation"
+
+
+def test_mean_ablation_plot_uses_diverging(transformer_inspector, token_dataset):
+    clean = torch.randint(0, 100, (1, 6))
+    result = transformer_inspector.patching.mean_ablation(
+        clean, token_dataset, layers=["transformer.h.0"]
+    )
+    ax = result.plot()
+    assert ax is not None

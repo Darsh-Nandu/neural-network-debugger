@@ -1,14 +1,17 @@
 """PatchingAnalyzer — which layers causally produce a behaviour?
 
-Implements activation patching / causal tracing in the style of Meng et al.
-(2022), "Locating and Editing Factual Associations in GPT" (ROME): run a
-clean and a corrupted input through the model, then for every (layer,
-position) pair, splice the clean run's activation into the corrupted run
-and measure how much of the target logit gap that single substitution
-recovers.
+Implements two complementary patching experiments:
+
+``causal_trace`` (Meng et al. 2022, ROME): swap the clean run's activation
+into the corrupted run at each (layer, position) and measure logit recovery.
+
+``mean_ablation``: replace a single run's activation at each (layer, position)
+with the dataset mean and measure the logit drop.  This identifies positions
+whose deviation from the average is load-bearing for the prediction.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import torch
@@ -30,6 +33,12 @@ class PatchingAnalyzer:
             clean, corrupted, target=target, layers=inspector.find_layers(r"h\\.\\d+$")
         )
         result.plot()
+
+        # Mean-ablation: which positions carry above-average information?
+        result2 = inspector.patching.mean_ablation(
+            clean, token_dataset, layers=inspector.find_layers(r"h\\.\\d+$")
+        )
+        result2.plot()
     """
 
     def __init__(self, inspector: Inspector) -> None:
@@ -53,9 +62,8 @@ class PatchingAnalyzer:
                 argmax prediction at the last position.
             layers: layer names to scan. Defaults to every registered
                 layer — for transformer models, restrict this to one
-                module per block (e.g. ``inspector.find_layers(r"h\\.\\d+$")``)
-                to keep the ``len(layers) * len(positions)`` forward passes
-                tractable.
+                module per block to keep the ``len(layers) * len(positions)``
+                forward passes tractable.
             positions: token positions to scan. Defaults to every position.
         """
         inspector = self._inspector
@@ -101,6 +109,64 @@ class PatchingAnalyzer:
             positions=position_list,
             tokens=self._tokens(corrupted),
             target=target_idx,
+            method="causal_trace",
+        )
+
+    def mean_ablation(
+        self,
+        clean: torch.Tensor,
+        dataset: Sequence[torch.Tensor],
+        *,
+        target: int | None = None,
+        layers: list[str] | None = None,
+        positions: list[int] | None = None,
+    ) -> PatchingResult:
+        """Ablate each (layer, position) to the dataset mean activation.
+
+        For each (layer, pos), the clean run's activation at that position is
+        replaced by the mean activation computed across ``dataset``.  The score
+        is ``clean_logit - ablated_logit`` — positive values identify positions
+        whose above-average activation is load-bearing for the prediction.
+
+        Args:
+            clean: the reference input whose activations will be ablated.
+            dataset: inputs used to compute mean activations (can be plain
+                tensors or ``(tensor, label)`` pairs).
+        """
+        inspector = self._inspector
+        clean = self._prep(clean)
+        layer_names = layers or inspector.layers()
+        seq_len = clean.shape[-1]
+        position_list = positions if positions is not None else list(range(seq_len))
+
+        mean_acts = _compute_mean_acts(inspector, dataset, layer_names)
+
+        with inspector._hooks.capture(layer_names) as clean_cache, torch.no_grad():
+            clean_logits = self._extract_logits(inspector.model(clean))
+
+        target_idx = self._resolve_target(clean_logits, target)
+        clean_value = self._target_value(clean_logits, target_idx)
+
+        importance = torch.zeros(len(layer_names), len(position_list))
+        for i, layer in enumerate(layer_names):
+            clean_act = clean_cache[layer]
+            mean_act = mean_acts[layer]
+            for j, pos in enumerate(position_list):
+                ablated_act = clean_act.clone()
+                if pos < mean_act.shape[1] and mean_act.shape[-1] == clean_act.shape[-1]:
+                    ablated_act[:, pos, ...] = mean_act[:, pos, ...]
+                with inspector._hooks.patch({layer: ablated_act}), torch.no_grad():
+                    ablated_logits = self._extract_logits(inspector.model(clean))
+                ablated_value = self._target_value(ablated_logits, target_idx)
+                importance[i, j] = clean_value - ablated_value
+
+        return PatchingResult(
+            matrix=importance,
+            layers=layer_names,
+            positions=position_list,
+            tokens=self._tokens(clean),
+            target=target_idx,
+            method="mean_ablation",
         )
 
     # ------------------------------------------------------------------
@@ -129,3 +195,27 @@ class PatchingAnalyzer:
         if tokenizer is None:
             return None
         return tokenizer.convert_ids_to_tokens(input_ids[0].tolist())
+
+
+def _compute_mean_acts(inspector, dataset, layer_names: list[str]) -> dict[str, torch.Tensor]:
+    """Mean activation tensor (1, seq, hidden) across dataset, aligned by
+    truncating to the shortest sequence length seen."""
+    sum_acts: dict[str, torch.Tensor] = {}
+    counts: dict[str, int] = {}
+    for inp in dataset:
+        inp_t = inp if isinstance(inp, torch.Tensor) else inp[0]
+        inp_t = inp_t.to(inspector.device)
+        if inp_t.dim() == 1:
+            inp_t = inp_t.unsqueeze(0)
+        with inspector._hooks.capture(layer_names) as cache, torch.no_grad():
+            inspector.model(inp_t)
+        for ln in layer_names:
+            act = cache[ln].cpu()
+            if ln not in sum_acts:
+                sum_acts[ln] = act.clone()
+                counts[ln] = 1
+            else:
+                min_len = min(act.shape[1], sum_acts[ln].shape[1])
+                sum_acts[ln] = sum_acts[ln][:, :min_len, ...] + act[:, :min_len, ...]
+                counts[ln] += 1
+    return {ln: (sum_acts[ln] / counts[ln]).to(inspector.device) for ln in layer_names}
