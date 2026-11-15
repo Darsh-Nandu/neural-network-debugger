@@ -1,0 +1,107 @@
+{
+  "model": "gpt2",
+  "dataset": "nyu-mll/glue sst2 train, sentences with 6+ words",
+  "n_samples": 600,
+  "seed": 0,
+  "probe": {
+    "last": {
+      "best_layer": "transformer.h.11",
+      "accuracy": {
+        "transformer.h.0": 0.63,
+        "transformer.h.1": 0.5883,
+        "transformer.h.2": 0.6167,
+        "transformer.h.3": 0.6183,
+        "transformer.h.4": 0.6233,
+        "transformer.h.5": 0.66,
+        "transformer.h.6": 0.69,
+        "transformer.h.7": 0.74,
+        "transformer.h.8": 0.7333,
+        "transformer.h.9": 0.745,
+        "transformer.h.10": 0.75,
+        "transformer.h.11": 0.7533
+      },
+      "std": {
+        "transformer.h.0": 0.0375,
+        "transformer.h.1": 0.0227,
+        "transformer.h.2": 0.0279,
+        "transformer.h.3": 0.042,
+        "transformer.h.4": 0.0207,
+        "transformer.h.5": 0.0355,
+        "transformer.h.6": 0.0193,
+        "transformer.h.7": 0.022,
+        "transformer.h.8": 0.0167,
+        "transformer.h.9": 0.0135,
+        "transformer.h.10": 0.0197,
+        "transformer.h.11": 0.0352
+      }
+    },
+    "mean": {
+      "best_layer": "transformer.h.8",
+      "accuracy": {
+        "transformer.h.0": 0.73,
+        "transformer.h.1": 0.7183,
+        "transformer.h.2": 0.7433,
+        "transformer.h.3": 0.7583,
+        "transformer.h.4": 0.7633,
+        "transformer.h.5": 0.7983,
+        "transformer.h.6": 0.7917,
+        "transformer.h.7": 0.785,
+        "transformer.h.8": 0.8033,
+        "transformer.h.9": 0.8,
+        "transformer.h.10": 0.7917,
+        "transformer.h.11": 0.775
+      },
+      "std": {
+        "transformer.h.0": 0.0113,
+        "transformer.h.1": 0.0276,
+        "transformer.h.2": 0.0207,
+        "transformer.h.3": 0.0197,
+        "transformer.h.4": 0.0233,
+        "transformer.h.5": 0.0097,
+        "transformer.h.6": 0.0274,
+        "transformer.h.7": 0.0399,
+        "transformer.h.8": 0.0292,
+        "transformer.h.9": 0.038,
+        "transformer.h.10": 0.0514,
+        "transformer.h.11": 0.0503
+      }
+    }
+  },
+  "inlp": {
+    "layer": "transformer.h.8",
+    "iterations": 20,
+    "train_accuracy_trace": [
+      1.0,
+      0.93,
+      0.9033,
+      0.8883,
+      0.8683,
+      0.8467,
+      0.83,
+      0.8183,
+      0.8033,
+      0.7883,
+      0.7633,
+      0.7583,
+      0.75,
+      0.7383,
+      0.7333,
+      0.7267,
+      0.7,
+      0.6917,
+      0.6817,
+      0.6767
+    ]
+  },
+  "causal_trace": {
+    "clean": "The Brandenburg Gate is in the city of",
+    "corrupted": "The Golden Gate Bridge is in the city of",
+    "target_token": " Berlin",
+    "best_layer": "transformer.h.9",
+    "best_position": 8,
+    "best_token": "\u0120of",
+    "best_value": 1.0666
+  },
+  "wall_time_sec": 2089.0,
+  "device": "cpu"
+}

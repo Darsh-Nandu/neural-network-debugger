@@ -77,8 +77,8 @@ for token-level labeling.
 ### Activation patching / causal tracing
 
 ```python
-clean = tokenizer("The Eiffel Tower is in the city of", return_tensors="pt").input_ids
-corrupted = tokenizer("The Space Needle is in the city of", return_tensors="pt").input_ids
+clean = tokenizer("The Brandenburg Gate is in the city of", return_tensors="pt").input_ids
+corrupted = tokenizer("The Golden Gate Bridge is in the city of", return_tensors="pt").input_ids
 
 # Causal trace: which (layer, position) recovers the clean prediction?
 result = inspector.patching.causal_trace(
@@ -137,6 +137,36 @@ result = inspector.erasure.inlp(dataset, concept="sentiment", layer="transformer
 result.plot()                          # probe accuracy decay over iterations
 erased = result.apply(some_activations)  # project new activations through erasure
 ```
+
+## Worked example: sentiment in GPT-2 small
+
+`examples/gpt2_sentiment.py` runs three planes on real data and saves the numbers in `examples/results/gpt2_sentiment.json`. Everything below comes from one run (600 SST-2 sentences, balanced, seed 0, CPU).
+
+**Probing.** A logistic regression probe, 5-fold cross-validated, at every block:
+
+![Probe accuracy per block](examples/results/probe_sentiment.png)
+
+| Pooling | Block 0 | Best block | Accuracy at best | Block 11 |
+| :--- | :---: | :---: | :---: | :---: |
+| mean over tokens | 73.0% | 8 | 80.3% | 77.5% |
+| last token | 63.0% | 11 | 75.3% | 75.3% |
+
+Sentiment is easiest to read from the middle of the network when you average over the sentence, and it only reaches the last token in the final blocks.
+
+**Erasure.** INLP on block 8 removes one direction per iteration. The probe's training accuracy falls from 100% to 67.7% over 20 iterations, so the signal is spread over many directions, not one.
+
+**Patching.** Clean prompt "The Brandenburg Gate is in the city of" (GPT-2 predicts " Berlin"), corrupted prompt "The Golden Gate Bridge is in the city of". Restoring the clean activation at block 9 on the last token recovers the " Berlin" logit fully (recovery 1.07). Early blocks matter at the landmark's name instead:
+
+![Causal trace](examples/results/causal_trace.png)
+
+To reproduce:
+
+```bash
+pip install -e . datasets
+python examples/gpt2_sentiment.py
+```
+
+The run takes a few minutes on a laptop CPU. These numbers are for GPT-2 small on 600 sentences. They show the tool working on a real model and should not be read as a general claim about where sentiment lives.
 
 ## Development
 
