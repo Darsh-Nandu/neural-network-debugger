@@ -166,7 +166,7 @@ pip install -e . datasets
 python examples/gpt2_sentiment.py
 ```
 
-The run takes a few minutes on a laptop CPU. These numbers are for GPT-2 small on 600 sentences. They show the tool working on a real model and should not be read as a general claim about where sentiment lives.
+The saved run took about 35 minutes on an 8-core laptop CPU that was busy with other work. These numbers are for GPT-2 small on 600 sentences. They show the tool working on a real model and should not be read as a general claim about where sentiment lives.
 
 ## Development
 
